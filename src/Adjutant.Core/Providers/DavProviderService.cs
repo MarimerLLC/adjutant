@@ -492,7 +492,18 @@ public sealed class DavProviderService : IDavProviderService
                 cfg.Preset, DavServiceKind.CardDav, entry, cancellationToken);
             EnsureHttpSuccess(report, "addressbook-query");
 
-            foreach (var item in DavXml.ParseMultiStatus(report.Body, report.FinalUri))
+            var items = DavXml.ParseMultiStatus(report.Body, report.FinalUri);
+            // Some CardDAV servers return no vCards for an empty filter.
+            if (!items.Any(item => !string.IsNullOrWhiteSpace(item.AddressData)))
+            {
+                var fallback = await _http.ReportAsync(
+                    book.Href, cfg.Username, cfg.Password, DavXml.AddressbookQuery(requireFormattedName: true),
+                    cfg.Preset, DavServiceKind.CardDav, entry, cancellationToken);
+                EnsureHttpSuccess(fallback, "addressbook-query (FN)");
+                items = DavXml.ParseMultiStatus(fallback.Body, fallback.FinalUri);
+            }
+
+            foreach (var item in items)
             {
                 if (string.IsNullOrWhiteSpace(item.AddressData))
                     continue;
