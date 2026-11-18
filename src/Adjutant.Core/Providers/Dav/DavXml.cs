@@ -86,17 +86,23 @@ public static class DavXml
             """;
     }
 
-    public static string AddressbookQuery() =>
-        """
+    public static string AddressbookQuery(bool requireFormattedName = false)
+    {
+        var filter = requireFormattedName
+            ? """<c:filter><c:prop-filter name="FN"/></c:filter>"""
+            : "<c:filter/>";
+
+        return $"""
         <?xml version="1.0" encoding="utf-8"?>
         <c:addressbook-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav">
           <d:prop>
             <d:getetag/>
             <c:address-data/>
           </d:prop>
-          <c:filter/>
+          {filter}
         </c:addressbook-query>
         """;
+    }
 
     public static IReadOnlyList<DavPropResponse> ParseMultiStatus(string xml, Uri baseUri)
     {
