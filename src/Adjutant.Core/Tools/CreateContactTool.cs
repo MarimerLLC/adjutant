@@ -26,8 +26,13 @@ public sealed class CreateContactTool(
         [Description("Phone number (or comma-separated list)")] string? phone = null,
         [Description("Job title")] string? jobTitle = null,
         [Description("Company name")] string? companyName = null,
-        [Description("Notes about the contact")] string? notes = null)
+        [Description("Notes about the contact")] string? notes = null,
+        [Description("Exact name of the target CardDAV address book. Requires accountId.")] string? addressBookName = null)
     {
+        if (addressBookName is not null &&
+            (string.IsNullOrWhiteSpace(addressBookName) || string.IsNullOrWhiteSpace(accountId)))
+            throw new McpException("Selecting an address book requires its name and an explicit accountId.");
+
         logger.LogInformation("Creating contact: displayName={DisplayName}, accountId={AccountId}",
             displayName, accountId);
 
@@ -58,10 +63,22 @@ public sealed class CreateContactTool(
             var phoneNumbers = ParseCommaSeparated(phone);
 
             var provider = providerFactory.GetProvider(account.Provider);
-            var contactId = await provider.CreateContactAsync(
-                account.Id, displayName, givenName, surname,
-                emailAddresses, phoneNumbers, jobTitle, companyName, notes,
-                CancellationToken.None);
+            string contactId;
+            if (addressBookName is not null)
+            {
+                if (provider is not IDavProviderService davProvider)
+                    throw new McpException("Selecting an address book is supported only for CardDAV accounts.");
+
+                contactId = await davProvider.CreateContactInAddressBookAsync(
+                    account.Id, displayName, addressBookName, givenName, surname,
+                    emailAddresses, phoneNumbers, jobTitle, companyName, notes, CancellationToken.None);
+            }
+            else
+            {
+                contactId = await provider.CreateContactAsync(
+                    account.Id, displayName, givenName, surname,
+                    emailAddresses, phoneNumbers, jobTitle, companyName, notes, CancellationToken.None);
+            }
 
             var result = new
             {

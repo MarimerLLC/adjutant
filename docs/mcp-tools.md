@@ -668,6 +668,7 @@ Create a new contact in a specific account.
 
 **Parameters**:
 - `accountId` (optional): Specific account, or use first writable account
+- `addressBookName` (optional): Exact CardDAV address book name (case-insensitive). Requires an explicit `accountId`. If omitted, CardDAV uses the first writable address book.
 - `displayName` (optional): Full display name
 - `givenName` (optional): First name
 - `surname` (optional): Last name
