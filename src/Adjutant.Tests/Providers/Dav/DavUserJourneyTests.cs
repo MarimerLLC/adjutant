@@ -59,6 +59,29 @@ public class DavUserJourneyTests
     }
 
     [TestMethod]
+    public async Task ContactCreate_WithAddressBookName_WritesOnlyToSelectedBook()
+    {
+        using var server = new Server();
+        var provider = server.Provider();
+        var id = await provider.CreateContactInAddressBookAsync("a", "Alice", "SECONDARY");
+
+        Assert.IsTrue(DavResourceId.Decode(id).AbsolutePath.StartsWith("/a/book/secondary/"));
+        Assert.AreEqual(1, server.Writes.Count);
+    }
+
+    [DataTestMethod]
+    [DataRow("unknown", false)]
+    [DataRow("ro", false)]
+    [DataRow("rw", true)]
+    public async Task ContactCreate_InvalidAddressBook_DoesNotWrite(string book, bool duplicateNames)
+    {
+        using var server = new Server { DuplicateBookNames = duplicateNames };
+        await Assert.ThrowsExceptionAsync<ProviderOperationException>(
+            () => server.Provider().CreateContactInAddressBookAsync("a", "Alice", book));
+        Assert.AreEqual(0, server.Writes.Count);
+    }
+
+    [TestMethod]
     public async Task CrossAccountIds_RejectAllDirectResourceOperationsBeforeSendingToForeignPath()
     {
         using var server = new Server();
@@ -335,7 +358,7 @@ public class DavUserJourneyTests
 
     private sealed class Server : HttpMessageHandler, IHttpClientFactory, IAccountRegistry
     {
-        public bool ReadOnly, Shared, Discover, FailWrites;
+        public bool ReadOnly, Shared, Discover, FailWrites, DuplicateBookNames;
         public string Home = "/a/cal/";
         public AccountInfo Account = TestData.CreateAccount(id: "a", provider: "dav", providerConfig: new()
         {
@@ -369,7 +392,11 @@ public class DavUserJourneyTests
                 if (body.Contains("calendar-home-set")) return Xml($"<d:response><d:href>/principal/</d:href><d:propstat><d:prop><c:calendar-home-set><d:href>{Home}</d:href></c:calendar-home-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>");
                 var book = path.Contains("book");
                 var writable = Shared && !book ? "/shared/cal/" : path + "rw/";
-                return Xml(Collection(path + "ro/", book, false) + Collection(writable, book, !ReadOnly));
+                var collections = Collection(path + "ro/", book, false) + Collection(writable, book, !ReadOnly);
+                if (book)
+                    collections += Collection(path + "secondary/", true, !ReadOnly,
+                        DuplicateBookNames ? "rw" : "secondary");
+                return Xml(collections);
             }
             if (request.Method.Method == "REPORT")
             {
@@ -394,7 +421,7 @@ public class DavUserJourneyTests
             }
             return new(HttpStatusCode.NotFound);
         }
-        private static string Collection(string path, bool book, bool write) => $"<d:response><d:href>{path}</d:href><d:propstat><d:prop><d:resourcetype><{(book ? "a:addressbook" : "c:calendar")}/></d:resourcetype><d:current-user-privilege-set><d:privilege><d:{(write ? "write" : "read")}/></d:privilege></d:current-user-privilege-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>";
+        private static string Collection(string path, bool book, bool write, string? name = null) => $"<d:response><d:href>{path}</d:href><d:propstat><d:prop><d:displayname>{name ?? path.TrimEnd('/').Split('/').Last()}</d:displayname><d:resourcetype><{(book ? "a:addressbook" : "c:calendar")}/></d:resourcetype><d:current-user-privilege-set><d:privilege><d:{(write ? "write" : "read")}/></d:privilege></d:current-user-privilege-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>";
         private static HttpResponseMessage Xml(string body) => new(HttpStatusCode.MultiStatus) { Content = new StringContent($"<d:multistatus xmlns:d='DAV:' xmlns:c='urn:ietf:params:xml:ns:caldav' xmlns:a='urn:ietf:params:xml:ns:carddav'>{body}</d:multistatus>") };
         public Task<AccountInfo?> GetAccountAsync(string id) => Task.FromResult<AccountInfo?>(Account);
         public Task<IEnumerable<AccountInfo>> GetAllAccountsAsync() => Task.FromResult<IEnumerable<AccountInfo>>([Account]);

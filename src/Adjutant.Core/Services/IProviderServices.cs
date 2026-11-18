@@ -62,4 +62,16 @@ public interface IExchangeProviderService : IProviderService
 /// </summary>
 public interface IDavProviderService : IProviderService
 {
+    Task<string> CreateContactInAddressBookAsync(
+        string accountId,
+        string displayName,
+        string? addressBookName,
+        string? givenName = null,
+        string? surname = null,
+        List<string>? emailAddresses = null,
+        List<string>? phoneNumbers = null,
+        string? jobTitle = null,
+        string? companyName = null,
+        string? notes = null,
+        CancellationToken cancellationToken = default);
 }
