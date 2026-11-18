@@ -618,7 +618,8 @@ public static partial class IcalMapper
 /// </summary>
 public static partial class VCardMapper
 {
-    public static Contact ToContact(string vcard, string accountId, string contactId, string? etag)
+    public static Contact ToContact(
+        string vcard, string accountId, string contactId, string? etag, string? addressBookName = null)
     {
         var lines = Unfold(vcard);
         var emails = new List<ContactEmail>();
@@ -692,6 +693,7 @@ public static partial class VCardMapper
         return new Contact
         {
             Id = contactId,
+            AddressBookName = addressBookName,
             AccountId = accountId,
             DisplayName = displayName,
             GivenName = given,
