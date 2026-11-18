@@ -498,7 +498,7 @@ public sealed class DavProviderService : IDavProviderService
                     continue;
 
                 var contactId = DavResourceId.Encode(item.Href);
-                var contact = VCardMapper.ToContact(item.AddressData, accountId, contactId, item.Etag);
+                var contact = VCardMapper.ToContact(item.AddressData, accountId, contactId, item.Etag, book.DisplayName);
                 if (query is null || ContactMatches(contact, query))
                     contacts.Add(contact);
             }
