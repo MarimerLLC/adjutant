@@ -217,6 +217,13 @@ public static partial class RecurrenceRule
                 break;
         }
 
+        // Graph and Exchange move a missing day (the 31st, Feb 29) to the month's last day, where
+        // RFC 5545 skips that month, so they would add occurrences.
+        RequireNone(provider, kind == RecurrenceKind.AbsoluteMonthly && dayOfMonth > 28,
+            "a monthly rule on the 29th-31st would move to the last day in shorter months instead of skipping them");
+        RequireNone(provider, kind == RecurrenceKind.AbsoluteYearly && month == 2 && dayOfMonth == 29,
+            "a yearly rule on February 29 would move to February 28 instead of skipping non-leap years");
+
         DateOnly? endDate = null;
         if (HasUntil(pattern))
         {
@@ -224,6 +231,12 @@ public static partial class RecurrenceRule
             if (until.Kind == DateTimeKind.Utc && TimeZoneHelper.TryGetTimeZone(timeZone) is { } zone)
                 until = TimeZoneInfo.ConvertTimeFromUtc(until, zone);
             endDate = DateOnly.FromDateTime(until);
+            // The patterns' end date is inclusive, so a cutoff earlier in the day than the meeting
+            // (UNTIL=...T090000Z for a 10:00 meeting) excludes that day. A date-only UNTIL (no time,
+            // not UTC) includes it.
+            var hasTime = pattern.Until.Kind == DateTimeKind.Utc || pattern.Until.TimeOfDay != TimeSpan.Zero;
+            if (hasTime && until.TimeOfDay < start.TimeOfDay)
+                endDate = endDate.Value.AddDays(-1);
         }
 
         return new RecurrenceSpec(kind, interval, days, dayOfMonth, month, index, pattern.FirstDayOfWeek,

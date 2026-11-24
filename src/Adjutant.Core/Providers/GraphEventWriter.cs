@@ -117,6 +117,16 @@ internal static class GraphEventWriter
             hasAttendees ??= existing?.Attendees is { } existingAttendees ? existingAttendees.Count > 0 : null;
         }
 
+        if (body is not null)
+        {
+            // Graph requires an online meeting's join details, which live in the body, to be kept
+            // when the body is replaced; dropping them can disable the meeting.
+            var current = await graphClient.Me.Events[targetId].GetAsync(config =>
+                config.QueryParameters.Select = ["isOnlineMeeting", "body"], cancellationToken);
+            if (current?.IsOnlineMeeting == true)
+                body = KeepOnlineMeetingDetails(current.Body?.Content, body);
+        }
+
         var eventUpdate = BuildUpdate(subject, start, end, location, attendees, timeZone, isAllDay, body, change, seriesStart,
             recurrenceZone);
 
@@ -184,6 +194,32 @@ internal static class GraphEventWriter
         }
 
         return eventUpdate;
+    }
+
+    /// <summary>
+    /// <paramref name="newBody"/> in place of the user-written part of an online meeting's body,
+    /// followed by the meeting's join details (the block Teams starts with a rule of underscores,
+    /// or a <c>me-email-</c> class), and inside the existing <c>&lt;body&gt;</c> tag when there is one.
+    /// </summary>
+    /// <exception cref="Services.ProviderOperationException">The join details can't be found.</exception>
+    internal static string KeepOnlineMeetingDetails(string? existingHtml, string newBody)
+    {
+        var html = existingHtml ?? "";
+        var marker = new[] { html.IndexOf("________________", StringComparison.Ordinal), html.IndexOf("class=\"me-email-", StringComparison.Ordinal) }
+            .Where(i => i >= 0).DefaultIfEmpty(-1).Min();
+        if (marker < 0)
+            throw new Services.ProviderOperationException(
+                "This is an online meeting, and its join details couldn't be found in the description to keep " +
+                "them, so the description was not changed (replacing it could remove the join link).");
+
+        var blobStart = html.LastIndexOf("<div", marker, StringComparison.OrdinalIgnoreCase);
+        if (blobStart < 0)
+            blobStart = marker;
+
+        var bodyTag = System.Text.RegularExpressions.Regex.Match(html[..blobStart], "<body[^>]*>",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        var prefix = bodyTag.Success ? html[..(bodyTag.Index + bodyTag.Length)] : "";
+        return prefix + newBody + html[blobStart..];
     }
 
     private static Task<Event?> GetForRecurrenceAsync(GraphServiceClient graphClient, string id, CancellationToken ct) =>

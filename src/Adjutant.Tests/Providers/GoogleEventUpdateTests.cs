@@ -29,6 +29,32 @@ public class GoogleEventUpdateTests
     }
 
     [TestMethod]
+    public void FillMissingTimeZones_LabelsTimedBoundariesWithoutMovingThem()
+    {
+        var evt = new Event
+        {
+            Start = new EventDateTime { DateTimeRaw = "2026-12-01T09:00:00-06:00" },
+            End = new EventDateTime { DateTimeRaw = "2026-12-01T10:00:00-06:00", TimeZone = "America/New_York" }
+        };
+
+        GoogleProviderService.FillMissingTimeZones(evt, RecurrenceRule.Parse("FREQ=DAILY")!, "America/Chicago");
+
+        Assert.AreEqual("America/Chicago", evt.Start.TimeZone);
+        Assert.AreEqual("2026-12-01T09:00:00-06:00", evt.Start.DateTimeRaw);
+        Assert.AreEqual("America/New_York", evt.End.TimeZone, "an existing zone is kept");
+    }
+
+    [TestMethod]
+    public void FillMissingTimeZones_LeavesAllDayEventsAlone()
+    {
+        var evt = new Event { Start = new EventDateTime { Date = "2026-12-01" }, End = new EventDateTime { Date = "2026-12-02" } };
+
+        GoogleProviderService.FillMissingTimeZones(evt, RecurrenceRule.Parse("FREQ=YEARLY")!, "America/Chicago");
+
+        Assert.IsNull(evt.Start.TimeZone);
+    }
+
+    [TestMethod]
     public void ApplyRecurrence_ClearIsAnEmptyListNotNull()
     {
         var lines = GoogleProviderService.ApplyRecurrence(["RRULE:FREQ=DAILY", "RDATE:20261224T090000Z"], RecurrenceChange.Clear);

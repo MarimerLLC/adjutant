@@ -177,6 +177,20 @@ public class ExchangeEwsProviderServiceTests
     }
 
     [TestMethod]
+    public async Task UpdateEvent_AllDaySeriesIsAnchoredOnItsFloatingDate()
+    {
+        using var ews = new Ews();
+        // An Oct 16 all-day event created in Moscow is stored as Oct 15 21:00Z.
+        ews.Items["D"] = "<t:CalendarItemType>Single</t:CalendarItemType><t:Start>2026-10-15T21:00:00Z</t:Start>" +
+            "<t:StartTimeZoneId>Russian Standard Time</t:StartTimeZoneId><t:IsAllDayEvent>true</t:IsAllDayEvent>";
+
+        await ews.Provider().UpdateEventAsync("ex", "primary", "D", recurrence: "FREQ=MONTHLY", timeZone: "UTC");
+
+        Assert.AreEqual("2026-10-16", ews.Requests.Last().Descendants(T + "StartDate").Single().Value);
+        Assert.AreEqual("16", ews.Requests.Last().Descendants(T + "DayOfMonth").Single().Value);
+    }
+
+    [TestMethod]
     public async Task CreateEvent_WithoutAttendeesReportsNoOneToNotify()
     {
         using var ews = new Ews();

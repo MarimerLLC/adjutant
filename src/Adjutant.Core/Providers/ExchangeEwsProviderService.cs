@@ -405,7 +405,7 @@ public sealed class ExchangeEwsProviderService : IExchangeProviderService
 
         // A recurrence change goes to the series master, which an occurrence id has to be resolved to.
         var target = change is null
-            ? new EwsItemRef(eventId, await GetChangeKeyAsync(accountId, eventId, cancellationToken), null, null)
+            ? new EwsItemRef(eventId, await GetChangeKeyAsync(accountId, eventId, cancellationToken), null, null, false)
             : await GetRecurrenceTargetAsync(accountId, eventId, cancellationToken);
         // The zone the series' dates are read in: the caller's, else the item's own, so an
         // evening meeting west of UTC isn't anchored on the next (UTC) day.
@@ -447,7 +447,7 @@ public sealed class ExchangeEwsProviderService : IExchangeProviderService
     }
 
     /// <summary>A calendar item to update, with its start (UTC) and time zone when they were read.</summary>
-    private sealed record EwsItemRef(string Id, string? ChangeKey, DateTime? StartUtc, string? StartTimeZoneId);
+    private sealed record EwsItemRef(string Id, string? ChangeKey, DateTime? StartUtc, string? StartTimeZoneId, bool IsAllDay);
 
     /// <summary>
     /// Resolves <paramref name="eventId"/> to the item that carries the recurrence: itself, or
@@ -456,7 +456,8 @@ public sealed class ExchangeEwsProviderService : IExchangeProviderService
     private async Task<EwsItemRef> GetRecurrenceTargetAsync(string accountId, string eventId, CancellationToken ct)
     {
         XElement Shape() => new(M + "ItemShape", new XElement(T + "BaseShape", "IdOnly"),
-            new XElement(T + "AdditionalProperties", Field("calendar:CalendarItemType"), Field("calendar:Start"), Field("calendar:StartTimeZoneId")));
+            new XElement(T + "AdditionalProperties", Field("calendar:CalendarItemType"), Field("calendar:Start"), Field("calendar:StartTimeZoneId"),
+                Field("calendar:IsAllDayEvent")));
 
         async Task<XElement> GetAsync(XElement itemId)
         {
@@ -475,12 +476,23 @@ public sealed class ExchangeEwsProviderService : IExchangeProviderService
             itemIdElement?.Attribute("Id")?.Value ?? eventId,
             itemIdElement?.Attribute("ChangeKey")?.Value,
             ParseNullableDate(Child(item, "Start")),
-            Child(item, "StartTimeZoneId"));
+            Child(item, "StartTimeZoneId"),
+            string.Equals(Child(item, "IsAllDayEvent"), "true", StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>The item's start as local wall time in <paramref name="zone"/>.</summary>
-    private static DateTime? LocalStart(EwsItemRef item, TimeZoneInfo zone) =>
-        item.StartUtc is { } utc ? TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), zone) : null;
+    /// <summary>
+    /// The item's start as local wall time in <paramref name="zone"/>. An all-day item's start is
+    /// its floating date, read in the zone it was created in rather than the caller's.
+    /// </summary>
+    private static DateTime? LocalStart(EwsItemRef item, TimeZoneInfo zone)
+    {
+        if (item.StartUtc is not { } utc)
+            return null;
+        if (item.IsAllDay)
+            return FloatingDate(new DateTimeOffset(DateTime.SpecifyKind(utc, DateTimeKind.Utc)),
+                TimeZoneHelper.TryGetTimeZone(item.StartTimeZoneId)).ToDateTime(TimeOnly.MinValue);
+        return TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), zone);
+    }
 
     /// <summary>The Windows time zone id EWS expects, from an IANA or Windows name.</summary>
     internal static string? WindowsZoneId(string? timeZone)

@@ -91,7 +91,8 @@ times are sent as timed values.
 
 - `body` replaces the description (HTML allowed); `body="none"` clears
   it. `location="none"` clears the location. An empty string leaves either
-  unchanged.
+  unchanged. On a Microsoft 365 / Outlook.com Teams meeting the join details
+  are kept below the new description.
 - `attendees` replaces the whole list — include everyone who should stay.
   People already invited keep their accept/decline response.
 - `recurrence` sets or replaces the rule; `recurrence="none"` turns a
@@ -128,7 +129,9 @@ Use `COUNT` or `UNTIL`, not both; omit both for no end. A date-only
 in `timeZone`. Microsoft 365, Outlook.com and Exchange accept only the
 shapes in the table (no `BYHOUR`, one `BYMONTHDAY`, week numbers 1–4 or -1,
 one day per numbered `BYDAY` — use `BYSETPOS` for "the first/last of these
-days" — and `BYMONTH` on a yearly rule that names a day); a rule they can't
+days" — `BYMONTH` on a yearly rule that names a day, and no monthly rule on
+the 29th–31st or yearly on Feb 29, which they would move to the month's
+last day instead of skipping); a rule they can't
 store is refused with a message — rewrite it rather than retrying. Google
 and CalDAV accept any valid RRULE.
 

@@ -954,6 +954,7 @@ public class GoogleProviderService : IGoogleProviderService
             // After the times, so the rule matches whether the event is now timed or all-day.
             if (change is not null)
             {
+                FillMissingTimeZones(existingEvent, change, timeZone);
                 existingEvent.Recurrence = ApplyRecurrence(existingEvent.Recurrence, change,
                     existingEvent.Start?.Date is null, timeZone ?? existingEvent.Start?.TimeZone);
             }
@@ -1712,6 +1713,22 @@ public class GoogleProviderService : IGoogleProviderService
             .Where(line => !line.StartsWith("RRULE:", StringComparison.OrdinalIgnoreCase)
                 && !line.StartsWith("EXRULE:", StringComparison.OrdinalIgnoreCase));
         return [$"RRULE:{RecurrenceRule.RuleFor(change, timedEvent, timeZone)}", .. kept];
+    }
+
+    /// <summary>
+    /// Google requires start/end <c>timeZone</c> on a recurring timed event, but a one-off event can
+    /// have offset-bearing times without one. Labels them with <paramref name="timeZone"/>; the
+    /// offset still fixes the instant, so the meeting doesn't move.
+    /// </summary>
+    internal static void FillMissingTimeZones(Event evt, RecurrenceChange change, string? timeZone)
+    {
+        if (change.IsClear || string.IsNullOrWhiteSpace(timeZone))
+            return;
+        foreach (var boundary in new[] { evt.Start, evt.End })
+        {
+            if (boundary is { Date: null } && string.IsNullOrEmpty(boundary.TimeZone))
+                boundary.TimeZone = timeZone;
+        }
     }
 
     /// <summary>

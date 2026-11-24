@@ -163,12 +163,24 @@ public class RecurrenceRuleTests
     [DataRow("FREQ=WEEKLY;BYDAY=2MO", "numbered days")]
     [DataRow("FREQ=YEARLY;BYWEEKNO=20", "BYWEEKNO")]
     [DataRow("FREQ=MONTHLY;BYDAY=1MO,1WE", "BYSETPOS")]
+    [DataRow("FREQ=MONTHLY;BYMONTHDAY=31", "shorter months")]
+    [DataRow("FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=29", "February 29")]
     [DataRow("FREQ=YEARLY;BYDAY=-1MO", "needs BYMONTH")]
     [DataRow("FREQ=YEARLY;BYMONTHDAY=4", "needs BYMONTH")]
     public void Graph_RefusesWhatItCannotExpress(string rule, string expected)
     {
         var ex = Assert.ThrowsExactly<ProviderOperationException>(() => ToGraph(rule));
         StringAssert.Contains(ex.Message, expected);
+    }
+
+    [TestMethod]
+    public void Graph_UntilBeforeTheMeetingTimeExcludesThatDay()
+    {
+        // The meeting is at 10:00 (UTC here); a 09:00Z cutoff on Dec 4 ends the series on Dec 3.
+        Assert.AreEqual("2026-12-03", ToGraph("FREQ=DAILY;UNTIL=20261204T090000Z").Range!.EndDate.ToString());
+        Assert.AreEqual("2026-12-04", ToGraph("FREQ=DAILY;UNTIL=20261204T100000Z").Range!.EndDate.ToString());
+        // A date-only UNTIL includes its day.
+        Assert.AreEqual("2026-12-04", ToGraph("FREQ=DAILY;UNTIL=20261204").Range!.EndDate.ToString());
     }
 
     [TestMethod]

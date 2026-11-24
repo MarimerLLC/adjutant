@@ -65,6 +65,35 @@ public class GraphEventWriterTests
             null, null, null, null, null, null, null, null, RecurrenceRule.Parse("FREQ=DAILY"), null));
     }
 
+    private const string TeamsBlob =
+        "<div style=\"width:100%\"><span style=\"white-space:nowrap\">________________________________________________________________________________</span></div>" +
+        "<div class=\"me-email-text\">Microsoft Teams meeting <a href=\"https://teams.microsoft.com/l/meetup-join/x\">Join</a></div>";
+
+    [TestMethod]
+    public void KeepOnlineMeetingDetails_ReplacesOnlyTheUserText()
+    {
+        var existing = $"<html><head></head><body><p>Old agenda</p>{TeamsBlob}</body></html>";
+
+        var merged = GraphEventWriter.KeepOnlineMeetingDetails(existing, "<p>New agenda</p>");
+
+        Assert.AreEqual($"<html><head></head><body><p>New agenda</p>{TeamsBlob}</body></html>", merged);
+    }
+
+    [TestMethod]
+    public void KeepOnlineMeetingDetails_ClearingKeepsTheJoinLink()
+    {
+        var merged = GraphEventWriter.KeepOnlineMeetingDetails($"<p>Old</p>{TeamsBlob}", "");
+
+        Assert.AreEqual(TeamsBlob, merged);
+    }
+
+    [TestMethod]
+    public void KeepOnlineMeetingDetails_RefusesWhenTheJoinDetailsCantBeFound()
+    {
+        Assert.ThrowsExactly<Adjutant.Core.Services.ProviderOperationException>(() =>
+            GraphEventWriter.KeepOnlineMeetingDetails("<p>Just text</p>", "<p>New</p>"));
+    }
+
     [TestMethod]
     public void LocalStart_ConvertsUtcToTheRequestedZone()
     {

@@ -57,8 +57,14 @@ problem.
   own zone.
 - **Microsoft 365 / Outlook.com**: the two providers now share `GraphEventWriter` for create and
   update. Removing a recurrence sends `"recurrence": null`. Kiota drops null properties, so the null
-  goes out as additional data.
-- **Google**: `sendUpdates` is `all` or `none` from `notifyAttendees`. Replacing a rule keeps
+  goes out as additional data. Changing the description of an online (Teams) meeting keeps its join
+  details, as Graph requires; if they can't be found, the description is left unchanged with an error.
+- **Graph and Exchange recurrence limits**: monthly rules on the 29th–31st and yearly rules on
+  Feb 29 are refused (both providers would move them to the month's last day), an `UNTIL` earlier in
+  the day than the meeting ends the series the day before, and an all-day series on Exchange is
+  anchored on its floating date.
+- **Google**: `sendUpdates` is `all` or `none` from `notifyAttendees`. Making a one-off timed event
+  recurring fills in a missing start/end `timeZone` from the caller's, as Google requires. Replacing a rule keeps
   EXDATE/RDATE lines. An instance id is resolved to its series for recurrence changes.
 - **Exchange (EWS)**: body and recurrence on update; recurrence on create in schema order;
   `StartTimeZone`/`EndTimeZone` are set from `timeZone`, so a series keeps its local time across DST.
