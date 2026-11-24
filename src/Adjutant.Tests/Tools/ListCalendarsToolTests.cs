@@ -61,6 +61,21 @@ public class ListCalendarsToolTests
     }
 
     [TestMethod]
+    public async Task ListCalendars_NoAccounts_ReturnsEmptyWithWarning()
+    {
+        var regExp = new IAccountRegistryCreateExpectations();
+        regExp.Setups.GetEnabledAccounts().ReturnValue([]);
+
+        var factExp = new IProviderServiceFactoryCreateExpectations();
+        var tool = new ListCalendarsTool(regExp.Instance(), factExp.Instance(),
+            NullLogger<ListCalendarsTool>.Instance);
+
+        NoAccountsAssert.IsEmptyWithWarning(await tool.ListCalendars(), "calendars");
+        regExp.Verify();
+        factExp.Verify();
+    }
+
+    [TestMethod]
     public async Task ListCalendars_AllAccounts_ReturnsCalendars()
     {
         var acc1 = TestData.CreateAccount(id: "acc-1", provider: "microsoft365");

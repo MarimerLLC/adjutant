@@ -44,6 +44,10 @@ public sealed class GetCalendarEventsTool(
         // so this flag stays false there to avoid a redundant ListCalendarsAsync call.
         var validateCalendarId = false;
 
+        // Set when the all-accounts fan-out finds no enabled accounts: an empty result plus a
+        // warning, not an error (see ToolGuard.NoAccountsConfiguredWarning).
+        var noAccountsConfigured = false;
+
         List<AccountInfo> validAccounts;
         if (!string.IsNullOrEmpty(accountId))
         {
@@ -117,8 +121,7 @@ public sealed class GetCalendarEventsTool(
         {
             // Neither accountId nor calendarId supplied — query all enabled accounts.
             validAccounts = accountRegistry.GetEnabledAccounts().ToList();
-            if (validAccounts.Count == 0)
-                throw new McpException("No accounts found");
+            noAccountsConfigured = validAccounts.Count == 0;
         }
 
         // An account may be unreadable for two reasons: the provider has no calendar at all
@@ -127,6 +130,9 @@ public sealed class GetCalendarEventsTool(
         //   - explicit accountId targeting such an account -> actionable warning, no fetch
         //   - all-accounts fan-out -> silently skip them
         var warnings = new List<object>();
+        if (noAccountsConfigured)
+            warnings.Add(ToolGuard.NoAccountsConfiguredWarning());
+
         if (!string.IsNullOrEmpty(accountId))
         {
             var only = validAccounts[0];

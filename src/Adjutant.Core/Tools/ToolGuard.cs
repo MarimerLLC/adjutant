@@ -93,6 +93,21 @@ internal static class ToolGuard
     }
 
     /// <summary>
+    /// What a fan-out read tool tells the caller when the server has no (enabled) accounts at all.
+    /// Says how to fix it, since the agent can only relay it to the user.
+    /// </summary>
+    public const string NoAccountsConfiguredMessage =
+        "No enabled accounts are configured on this server. Add one (or enable an existing one) " +
+        "in the admin console, or add one with the CLI (e.g. 'adjutant-cli add-m365-account').";
+
+    /// <summary>
+    /// The <c>warnings</c> entry a fan-out read tool returns, alongside an empty result, when the
+    /// server has no accounts to fan out to. "No accounts" is the limiting case of skipping
+    /// unusable accounts, so it is not an error. It has no <c>accountId</c>: it is not about one account.
+    /// </summary>
+    public static object NoAccountsConfiguredWarning() => new { warning = NoAccountsConfiguredMessage };
+
+    /// <summary>
     /// Throws a permission-aware "nothing to query" error for a fan-out that filtered down to
     /// nothing, so the caller learns the accounts exist but are scoped out rather than seeing
     /// a bare "no accounts found".

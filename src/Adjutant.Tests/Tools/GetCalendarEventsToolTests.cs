@@ -194,7 +194,7 @@ public class GetCalendarEventsToolTests
     }
 
     [TestMethod]
-    public async Task GetCalendarEvents_NoAccountsConfigured_ThrowsMcpException()
+    public async Task GetCalendarEvents_NoAccountsConfigured_ReturnsEmptyWithWarning()
     {
         var regExp = new IAccountRegistryCreateExpectations();
         regExp.Setups.GetEnabledAccounts().ReturnValue([]);
@@ -203,10 +203,10 @@ public class GetCalendarEventsToolTests
         var tool = new GetCalendarEventsTool(regExp.Instance(), factExp.Instance(),
             NullLogger<GetCalendarEventsTool>.Instance);
 
-        var ex = await Assert.ThrowsExactlyAsync<McpException>(
-            () => tool.GetCalendarEvents(TestTimeZone, Start, End, null));
-        Assert.AreEqual("No accounts found", ex.Message);
+        NoAccountsAssert.IsEmptyWithWarning(
+            await tool.GetCalendarEvents(TestTimeZone, Start, End, null), "events");
         regExp.Verify();
+        factExp.Verify();
     }
 
     [TestMethod]

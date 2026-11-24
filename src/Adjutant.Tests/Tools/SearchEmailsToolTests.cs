@@ -164,7 +164,7 @@ public class SearchEmailsToolTests
     }
 
     [TestMethod]
-    public async Task SearchEmails_NoAccounts_ThrowsMcpException()
+    public async Task SearchEmails_NoAccounts_ReturnsEmptyWithWarning()
     {
         var regExp = new IAccountRegistryCreateExpectations();
         regExp.Setups.GetAllAccountsAsync()
@@ -174,10 +174,9 @@ public class SearchEmailsToolTests
         var tool = new SearchEmailsTool(regExp.Instance(), factExp.Instance(),
             NullLogger<SearchEmailsTool>.Instance);
 
-        var ex = await Assert.ThrowsExactlyAsync<McpException>(
-            () => tool.SearchEmails("test"));
-        Assert.AreEqual("No accounts found", ex.Message);
+        NoAccountsAssert.IsEmptyWithWarning(await tool.SearchEmails("test"), "emails");
         regExp.Verify();
+        factExp.Verify();
     }
 
     [TestMethod]

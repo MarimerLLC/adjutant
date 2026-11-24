@@ -24,19 +24,26 @@ public sealed class GetContactsTool(
     {
         logger.LogInformation("Getting contacts: accountId={AccountId}, count={Count}", accountId, count);
 
+        // A failed account is reported here rather than being indistinguishable from one with no data.
+        var warnings = new List<object>();
+
         List<AccountInfo> validAccounts;
         if (string.IsNullOrEmpty(accountId))
         {
             validAccounts = (await accountRegistry.GetAllAccountsAsync()).ToList();
             if (validAccounts.Count == 0)
-                throw new McpException("No accounts found");
-
-            // Skip accounts without contact-read permission (and providers with no contacts
-            // at all) rather than fanning out into a NotSupportedException.
-            validAccounts = ToolGuard.FilterByPermission(
-                validAccounts, AccountPermission.ContactsRead, logger, "get_contacts");
-            if (validAccounts.Count == 0)
-                throw ToolGuard.NoPermittedAccounts(AccountPermission.ContactsRead);
+            {
+                warnings.Add(ToolGuard.NoAccountsConfiguredWarning());
+            }
+            else
+            {
+                // Skip accounts without contact-read permission (and providers with no contacts
+                // at all) rather than fanning out into a NotSupportedException.
+                validAccounts = ToolGuard.FilterByPermission(
+                    validAccounts, AccountPermission.ContactsRead, logger, "get_contacts");
+                if (validAccounts.Count == 0)
+                    throw ToolGuard.NoPermittedAccounts(AccountPermission.ContactsRead);
+            }
         }
         else
         {
@@ -48,10 +55,6 @@ public sealed class GetContactsTool(
 
         try
         {
-
-            // A failed account is reported here rather than being indistinguishable from one with no data.
-            var warnings = new List<object>();
-
             var tasks = validAccounts.Select(async account =>
             {
                 try

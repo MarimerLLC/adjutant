@@ -83,6 +83,14 @@ email-only IMAP accounts), so those never produce errors or warnings.
 Targeting such an account explicitly via `accountId` returns no events
 plus an actionable warning.
 
+If the server has no accounts at all, every fan-out (including
+`get_contextual_email_summary`) returns an empty result plus one
+`warnings` entry with no `accountId`:
+`{ "warning": "No enabled accounts are configured on this server. ..." }`.
+Tell the user to add an account in the admin console rather than
+reporting "no emails" or "no events". If accounts exist but none permit
+the operation, the tool still errors with `No accounts permit ...`.
+
 ## Capability checking before write operations
 
 Before calling a write tool (e.g. `create_event`), confirm the chosen

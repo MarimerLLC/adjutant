@@ -27,20 +27,27 @@ public sealed class GetEmailsTool(
         logger.LogInformation("Getting emails: accountId={AccountId}, count={Count}, unreadOnly={UnreadOnly}, folder={Folder}",
             accountId, count, unreadOnly, folder);
 
+        // A failed account is reported here rather than being indistinguishable from one with no data.
+        var warnings = new List<object>();
+
         // Determine which accounts to query
         List<AccountInfo> validAccounts;
         if (string.IsNullOrEmpty(accountId))
         {
             validAccounts = (await accountRegistry.GetAllAccountsAsync()).ToList();
             if (validAccounts.Count == 0)
-                throw new McpException("No accounts found");
-
-            // Skip accounts that don't permit email reads — the caller asked for "all
-            // accounts", and a scoped-out account simply isn't part of that set.
-            validAccounts = ToolGuard.FilterByPermission(
-                validAccounts, AccountPermission.EmailRead, logger, "get_emails");
-            if (validAccounts.Count == 0)
-                throw ToolGuard.NoPermittedAccounts(AccountPermission.EmailRead);
+            {
+                warnings.Add(ToolGuard.NoAccountsConfiguredWarning());
+            }
+            else
+            {
+                // Skip accounts that don't permit email reads — the caller asked for "all
+                // accounts", and a scoped-out account simply isn't part of that set.
+                validAccounts = ToolGuard.FilterByPermission(
+                    validAccounts, AccountPermission.EmailRead, logger, "get_emails");
+                if (validAccounts.Count == 0)
+                    throw ToolGuard.NoPermittedAccounts(AccountPermission.EmailRead);
+            }
         }
         else
         {
@@ -52,10 +59,6 @@ public sealed class GetEmailsTool(
 
         try
         {
-
-            // A failed account is reported here rather than being indistinguishable from one with no data.
-            var warnings = new List<object>();
-
             // Query all accounts in parallel
             var tasks = validAccounts.Select(async account =>
             {

@@ -90,20 +90,20 @@ public class GetEmailsToolTests
     }
 
     [TestMethod]
-    public async Task GetEmails_NoAccounts_ThrowsMcpException()
+    public async Task GetEmails_NoAccounts_ReturnsEmptyWithWarning()
     {
         var regExp = new IAccountRegistryCreateExpectations();
         regExp.Setups.GetAllAccountsAsync()
             .ReturnValue(Task.FromResult<IEnumerable<AccountInfo>>([]));
 
+        // No GetProvider setup: no provider may be resolved when there are no accounts.
         var factExp = new IProviderServiceFactoryCreateExpectations();
         var tool = new GetEmailsTool(regExp.Instance(), factExp.Instance(),
             NullLogger<GetEmailsTool>.Instance);
 
-        var ex = await Assert.ThrowsExactlyAsync<McpException>(
-            () => tool.GetEmails());
-        Assert.AreEqual("No accounts found", ex.Message);
+        NoAccountsAssert.IsEmptyWithWarning(await tool.GetEmails(), "emails");
         regExp.Verify();
+        factExp.Verify();
     }
 
     [TestMethod]

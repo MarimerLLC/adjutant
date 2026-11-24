@@ -23,13 +23,16 @@ public sealed class ListCalendarsTool(
     {
         logger.LogInformation("Listing calendars: accountId={AccountId}", accountId);
 
+        // A failed account is reported here rather than being indistinguishable from one with no data.
+        var warnings = new List<object>();
+
         // Determine which accounts to query
         List<AccountInfo> validAccounts;
         if (string.IsNullOrEmpty(accountId))
         {
             validAccounts = accountRegistry.GetEnabledAccounts().ToList();
             if (validAccounts.Count == 0)
-                throw new McpException("No accounts found");
+                warnings.Add(ToolGuard.NoAccountsConfiguredWarning());
 
             // Skip accounts that can't or may not be read: email-only providers (e.g. IMAP),
             // where listing calendars would throw NotSupportedException, and accounts whose
@@ -48,10 +51,6 @@ public sealed class ListCalendarsTool(
 
         try
         {
-
-            // A failed account is reported here rather than being indistinguishable from one with no data.
-            var warnings = new List<object>();
-
             // Query all accounts in parallel
             var tasks = validAccounts.Select(async account =>
             {

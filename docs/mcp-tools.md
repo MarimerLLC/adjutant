@@ -66,8 +66,10 @@ Two behaviours differ by how the account was chosen:
   exception: it returns an empty result with a warning, matching how it already handles
   email-only accounts.
 - **Fan-out** (`accountId` omitted) — accounts lacking the permission are silently skipped; the
-  caller asked for "all accounts", and a scoped-out account isn't part of that set. If nothing
-  qualifies, the tool errors with `No accounts permit ...`.
+  caller asked for "all accounts", and a scoped-out account isn't part of that set. If accounts
+  exist but none qualify, the tool errors with `No accounts permit ...`. If the server has no
+  accounts at all, the tool returns an empty result plus a `warnings` entry (see
+  [No accounts configured](#no-accounts-configured)).
 
 Smart routing (`send_email`, `create_event`, `create_contact`, `delete_event`,
 `respond_to_event`) only ever selects accounts that permit the operation.
@@ -897,6 +899,23 @@ The `error` text distinguishes the cases a user can act on:
 Single-item tools (`get_email_details`, `get_calendar_event_details`, `get_contact_details`,
 `get_email_attachment`, …) and write tools return the re-authentication message as their tool
 error. A genuine "not found" (HTTP 404) is still reported as not found.
+
+### No accounts configured
+
+When `accountId` is omitted and the server has no (enabled) accounts, the same read tools return
+their normal empty result rather than an error, with one `warnings` entry that has no `accountId`:
+
+```json
+{
+  "emails": [],
+  "warnings": [
+    { "warning": "No enabled accounts are configured on this server. Add one (or enable an existing one) in the admin console, or add one with the CLI (e.g. 'adjutant-cli add-m365-account')." }
+  ]
+}
+```
+
+`get_contextual_email_summary` returns its "no emails found" payload (`accountsSearched: 0`) with
+the same warning. An explicit `accountId` that doesn't exist is still an error.
 
 ## Transport
 
