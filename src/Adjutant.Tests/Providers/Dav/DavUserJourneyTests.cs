@@ -70,15 +70,46 @@ public class DavUserJourneyTests
     }
 
     [DataTestMethod]
-    [DataRow("unknown", false)]
-    [DataRow("ro", false)]
-    [DataRow("rw", true)]
-    public async Task ContactCreate_InvalidAddressBook_DoesNotWrite(string book, bool duplicateNames)
+    [DataRow("unknown", "secondary", "was not found")]
+    [DataRow("ro", "secondary", "is read-only")]
+    [DataRow("rw", "rw", "matches 2 writable")]
+    public async Task ContactCreate_InvalidAddressBook_DoesNotWrite(string book, string secondaryName, string reason)
     {
-        using var server = new Server { DuplicateBookNames = duplicateNames };
-        await Assert.ThrowsExceptionAsync<ProviderOperationException>(
+        using var server = new Server { SecondaryBookName = secondaryName };
+        var ex = await Assert.ThrowsExceptionAsync<ProviderOperationException>(
             () => server.Provider().CreateContactInAddressBookAsync("a", "Alice", book));
+        StringAssert.Contains(ex.Message, reason);
         Assert.AreEqual(0, server.Writes.Count);
+    }
+
+    [TestMethod]
+    public async Task ContactCreate_UnknownAddressBook_ListsWritableNames()
+    {
+        using var server = new Server();
+        var ex = await Assert.ThrowsExceptionAsync<ProviderOperationException>(
+            () => server.Provider().CreateContactInAddressBookAsync("a", "Alice", "Personal"));
+        StringAssert.Contains(ex.Message, "Writable address books: 'rw', 'secondary'.");
+        Assert.IsFalse(ex.Message.Contains("'ro'"), "read-only books are not offered as targets");
+    }
+
+    [TestMethod]
+    public async Task ContactCreate_ReadOnlyNamesake_WritesToTheWritableBook()
+    {
+        // e.g. the user's own "Contacts" plus a colleague's shared, read-only "Contacts".
+        using var server = new Server { SecondaryBookName = "ro" };
+        var id = await server.Provider().CreateContactInAddressBookAsync("a", "Alice", "RO");
+
+        Assert.IsTrue(DavResourceId.Decode(id).AbsolutePath.StartsWith("/a/book/secondary/"));
+        Assert.AreEqual(1, server.Writes.Count);
+    }
+
+    [TestMethod]
+    public async Task ContactCreate_MatchesServerNamesIgnoringSurroundingWhitespace()
+    {
+        using var server = new Server { SecondaryBookName = " Family " };
+        var id = await server.Provider().CreateContactInAddressBookAsync("a", "Alice", "family");
+
+        Assert.IsTrue(DavResourceId.Decode(id).AbsolutePath.StartsWith("/a/book/secondary/"));
     }
 
     [TestMethod]
@@ -358,7 +389,8 @@ public class DavUserJourneyTests
 
     private sealed class Server : HttpMessageHandler, IHttpClientFactory, IAccountRegistry
     {
-        public bool ReadOnly, Shared, Discover, FailWrites, DuplicateBookNames;
+        public bool ReadOnly, Shared, Discover, FailWrites;
+        public string SecondaryBookName = "secondary"; // displayname of the third, writable address book
         public string Home = "/a/cal/";
         public AccountInfo Account = TestData.CreateAccount(id: "a", provider: "dav", providerConfig: new()
         {
@@ -394,8 +426,7 @@ public class DavUserJourneyTests
                 var writable = Shared && !book ? "/shared/cal/" : path + "rw/";
                 var collections = Collection(path + "ro/", book, false) + Collection(writable, book, !ReadOnly);
                 if (book)
-                    collections += Collection(path + "secondary/", true, !ReadOnly,
-                        DuplicateBookNames ? "rw" : "secondary");
+                    collections += Collection(path + "secondary/", true, !ReadOnly, SecondaryBookName);
                 return Xml(collections);
             }
             if (request.Method.Method == "REPORT")

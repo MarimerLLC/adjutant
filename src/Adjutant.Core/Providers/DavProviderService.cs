@@ -547,22 +547,41 @@ public sealed class DavProviderService : IDavProviderService
         DavAccountConfig cfg, string? addressBookName, CancellationToken cancellationToken)
     {
         var books = await ListAddressbooksAsync(cfg, cancellationToken);
-        if (addressBookName is null)
+        var name = addressBookName?.Trim();
+        if (string.IsNullOrEmpty(name))
         {
             return books.FirstOrDefault(b => b.CanWrite)?.Href
                 ?? throw new InvalidOperationException($"No writable address books found for account '{cfg.AccountId}'.");
         }
 
-        var matches = books.Where(b => string.Equals(b.DisplayName, addressBookName.Trim(),
-            StringComparison.OrdinalIgnoreCase)).ToList();
-        return matches.Count switch
-        {
-            0 => throw new ProviderOperationException($"Address book '{addressBookName}' was not found."),
-            > 1 => throw new ProviderOperationException($"Address book name '{addressBookName}' is ambiguous."),
-            _ when !matches[0].CanWrite =>
-                throw new ProviderOperationException($"Address book '{addressBookName}' is read-only."),
-            _ => matches[0].Href
-        };
+        var matches = books.Where(b => string.Equals(BookName(b), name, StringComparison.OrdinalIgnoreCase)).ToList();
+        // A read-only namesake (e.g. a shared "Contacts") shouldn't block the one writable match.
+        var writable = matches.Where(b => b.CanWrite).ToList();
+        if (writable.Count == 1)
+            return writable[0].Href;
+        if (writable.Count > 1)
+            throw new ProviderOperationException(
+                $"Address book name '{name}' matches {writable.Count} writable address books; rename one to make it unique.");
+
+        var reason = matches.Count == 0 ? "was not found" : "is read-only";
+        throw new ProviderOperationException(
+            $"Address book '{name}' {reason}. {DescribeWritableBooks(books)}");
+    }
+
+    private static string? BookName(DavPropResponse book) =>
+        string.IsNullOrWhiteSpace(book.DisplayName) ? null : book.DisplayName.Trim();
+
+    private static string DescribeWritableBooks(IEnumerable<DavPropResponse> books)
+    {
+        var names = books.Where(b => b.CanWrite)
+            .Select(BookName)
+            .OfType<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(n => $"'{n}'")
+            .ToList();
+        return names.Count == 0
+            ? "No writable address book has a name; omit addressBookName to use the default."
+            : $"Writable address books: {string.Join(", ", names)}.";
     }
 
     /// <summary>
