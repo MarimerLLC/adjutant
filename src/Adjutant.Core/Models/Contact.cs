@@ -16,6 +16,11 @@ public class Contact
     public required string AccountId { get; init; }
 
     /// <summary>
+    /// Display name of the source address book, when available.
+    /// </summary>
+    public string? AddressBookName { get; init; }
+
+    /// <summary>
     /// Full display name
     /// </summary>
     public string DisplayName { get; init; } = string.Empty;

@@ -26,10 +26,17 @@ public sealed class CreateContactTool(
         [Description("Phone number (or comma-separated list)")] string? phone = null,
         [Description("Job title")] string? jobTitle = null,
         [Description("Company name")] string? companyName = null,
-        [Description("Notes about the contact")] string? notes = null)
+        [Description("Notes about the contact")] string? notes = null,
+        [Description("Exact name of the target CardDAV address book (case-insensitive). Requires accountId. Omit to use the first writable address book.")] string? addressBookName = null)
     {
-        logger.LogInformation("Creating contact: displayName={DisplayName}, accountId={AccountId}",
-            displayName, accountId);
+        // Clients often send "" for optional parameters they don't use; treat that as omitted,
+        // the same way a blank accountId falls back to smart routing.
+        var targetBook = string.IsNullOrWhiteSpace(addressBookName) ? null : addressBookName.Trim();
+        if (targetBook is not null && string.IsNullOrEmpty(accountId))
+            throw new McpException("Selecting an address book requires an explicit accountId.");
+
+        logger.LogInformation("Creating contact: displayName={DisplayName}, accountId={AccountId}, addressBook={AddressBook}",
+            displayName, accountId, targetBook);
 
         // Determine which account to use
         Models.AccountInfo account;
@@ -58,10 +65,22 @@ public sealed class CreateContactTool(
             var phoneNumbers = ParseCommaSeparated(phone);
 
             var provider = providerFactory.GetProvider(account.Provider);
-            var contactId = await provider.CreateContactAsync(
-                account.Id, displayName, givenName, surname,
-                emailAddresses, phoneNumbers, jobTitle, companyName, notes,
-                CancellationToken.None);
+            string contactId;
+            if (targetBook is not null)
+            {
+                if (provider is not IDavProviderService davProvider)
+                    throw new McpException("Selecting an address book is supported only for CardDAV accounts.");
+
+                contactId = await davProvider.CreateContactInAddressBookAsync(
+                    account.Id, displayName, targetBook, givenName, surname,
+                    emailAddresses, phoneNumbers, jobTitle, companyName, notes, CancellationToken.None);
+            }
+            else
+            {
+                contactId = await provider.CreateContactAsync(
+                    account.Id, displayName, givenName, surname,
+                    emailAddresses, phoneNumbers, jobTitle, companyName, notes, CancellationToken.None);
+            }
 
             var result = new
             {

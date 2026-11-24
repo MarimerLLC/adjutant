@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using Adjutant.Core.Models;
 using Adjutant.Core.Providers.Dav;
@@ -19,6 +20,12 @@ public sealed class DavProviderService : IDavProviderService
     private readonly DavHttpClient _http;
     private readonly DavDiscovery _discovery;
     private readonly ILogger<DavProviderService> _logger;
+
+    // Per account + CardDAV entry URL: whether the server honours an empty addressbook-query
+    // filter. Learned on first use so compliant servers never pay for the fallback probe.
+    private readonly ConcurrentDictionary<string, AddressbookFilterMode> _addressbookFilterModes = new();
+
+    private enum AddressbookFilterMode { Unknown, EmptyFilterWorks, NeedsPropertyFilter }
 
     public DavProviderService(
         IAccountRegistry accountRegistry,
@@ -390,19 +397,34 @@ public sealed class DavProviderService : IDavProviderService
         EnsureContacts(cfg);
 
         var entry = EntryUri(cfg, DavServiceKind.CardDav);
-        var href = await ValidateContactResourceAsync(cfg, contactId, cancellationToken);
+        var (href, book) = await ResolveContactResourceAsync(cfg, contactId, cancellationToken);
         var get = await _http.GetAsync(href, cfg.Username, cfg.Password, cfg.Preset,
             DavServiceKind.CardDav, entry, cancellationToken);
         if (get.StatusCode == HttpStatusCode.NotFound)
             return null;
         EnsureHttpSuccess(get, "get contact");
 
-        return VCardMapper.ToContact(get.Body, accountId, contactId, get.Etag);
+        return VCardMapper.ToContact(get.Body, accountId, contactId, get.Etag, AddressBookName(book));
     }
 
-    public async Task<string> CreateContactAsync(
+    public Task<string> CreateContactAsync(
         string accountId,
         string displayName,
+        string? givenName = null,
+        string? surname = null,
+        List<string>? emailAddresses = null,
+        List<string>? phoneNumbers = null,
+        string? jobTitle = null,
+        string? companyName = null,
+        string? notes = null,
+        CancellationToken cancellationToken = default) =>
+        CreateContactInAddressBookAsync(accountId, displayName, null, givenName, surname,
+            emailAddresses, phoneNumbers, jobTitle, companyName, notes, cancellationToken);
+
+    public async Task<string> CreateContactInAddressBookAsync(
+        string accountId,
+        string displayName,
+        string? addressBookName,
         string? givenName = null,
         string? surname = null,
         List<string>? emailAddresses = null,
@@ -415,7 +437,7 @@ public sealed class DavProviderService : IDavProviderService
         var cfg = await ResolveConfigAsync(accountId);
         EnsureContacts(cfg);
 
-        var book = await GetPrimaryAddressbookAsync(cfg, cancellationToken);
+        var book = await SelectAddressBookAsync(cfg, addressBookName, cancellationToken);
         var uid = Guid.NewGuid().ToString();
         var href = new Uri(book, $"{uid}.vcf");
         var vcard = VCardMapper.ToVCard(uid, displayName, givenName, surname,
@@ -485,26 +507,107 @@ public sealed class DavProviderService : IDavProviderService
         var entry = EntryUri(cfg, DavServiceKind.CardDav);
         var contacts = new List<Contact>();
 
+        var modeKey = $"{accountId}|{entry}";
+        var mode = _addressbookFilterModes.GetValueOrDefault(modeKey);
+        var usePropertyFilter = mode == AddressbookFilterMode.NeedsPropertyFilter;
+
+        var results = new List<IReadOnlyList<DavPropResponse>>(books.Count);
         foreach (var book in books)
         {
             var report = await _http.ReportAsync(
-                book.Href, cfg.Username, cfg.Password, DavXml.AddressbookQuery(),
+                book.Href, cfg.Username, cfg.Password, DavXml.AddressbookQuery(usePropertyFilter),
                 cfg.Preset, DavServiceKind.CardDav, entry, cancellationToken);
-            EnsureHttpSuccess(report, "addressbook-query");
+            EnsureHttpSuccess(report, usePropertyFilter ? "addressbook-query (property filter)" : "addressbook-query");
+            results.Add(DavXml.ParseMultiStatus(report.Body, report.FinalUri));
+        }
 
-            foreach (var item in DavXml.ParseMultiStatus(report.Body, report.FinalUri))
+        if (mode == AddressbookFilterMode.Unknown)
+        {
+            if (results.Any(HasVCards))
+            {
+                // The server honours an empty filter; never probe this account again.
+                _addressbookFilterModes[modeKey] = AddressbookFilterMode.EmptyFilterWorks;
+            }
+            else
+            {
+                // Every book came back empty. Either they really are empty, or this is a
+                // server (e.g. Synology Contacts) that returns nothing for an empty filter.
+                for (var i = 0; i < books.Count; i++)
+                {
+                    var retried = await TryPropertyFilteredQueryAsync(cfg, entry, books[i], cancellationToken);
+                    if (retried is not null)
+                        results[i] = retried;
+                }
+
+                var found = results.Sum(r => r.Count(item => !string.IsNullOrWhiteSpace(item.AddressData)));
+                if (found > 0)
+                {
+                    _addressbookFilterModes[modeKey] = AddressbookFilterMode.NeedsPropertyFilter;
+                    _logger.LogInformation(
+                        "CardDAV server for account {AccountId} returned no vCards for an empty filter but {Count} with a property filter; using the property filter from now on",
+                        accountId, found);
+                }
+                else
+                {
+                    _logger.LogDebug(
+                        "CardDAV address books for account {AccountId} are empty with both filters", accountId);
+                }
+            }
+        }
+
+        // results[i] holds the query results for books[i].
+        for (var i = 0; i < books.Count; i++)
+        {
+            var bookName = AddressBookName(books[i]);
+            foreach (var item in results[i])
             {
                 if (string.IsNullOrWhiteSpace(item.AddressData))
                     continue;
 
                 var contactId = DavResourceId.Encode(item.Href);
-                var contact = VCardMapper.ToContact(item.AddressData, accountId, contactId, item.Etag);
+                var contact = VCardMapper.ToContact(
+                    item.AddressData, accountId, contactId, item.Etag, bookName);
                 if (query is null || ContactMatches(contact, query))
                     contacts.Add(contact);
             }
         }
 
         return contacts;
+    }
+
+    private static bool HasVCards(IReadOnlyList<DavPropResponse> items) =>
+        items.Any(item => !string.IsNullOrWhiteSpace(item.AddressData));
+
+    /// <summary>
+    /// Best-effort retry of one address book with an explicit property filter. Returns
+    /// null (keep the original empty result) when the server rejects the filter or the
+    /// request fails, so a server without this quirk never loses a working query.
+    /// </summary>
+    private async Task<IReadOnlyList<DavPropResponse>?> TryPropertyFilteredQueryAsync(
+        DavAccountConfig cfg, Uri entry, DavPropResponse book, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await _http.ReportAsync(
+                book.Href, cfg.Username, cfg.Password, DavXml.AddressbookQuery(requirePropertyFilter: true),
+                cfg.Preset, DavServiceKind.CardDav, entry, cancellationToken);
+            if (!result.IsSuccess)
+            {
+                _logger.LogWarning(
+                    "CardDAV property-filter retry for account {AccountId} failed with HTTP {Status}; keeping the empty result",
+                    cfg.AccountId, (int)result.StatusCode);
+                return null;
+            }
+
+            return DavXml.ParseMultiStatus(result.Body, result.FinalUri);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogWarning(ex,
+                "CardDAV property-filter retry for account {AccountId} failed; keeping the empty result",
+                cfg.AccountId);
+            return null;
+        }
     }
 
     private async Task<IReadOnlyList<DavPropResponse>> ListAddressbooksAsync(
@@ -528,12 +631,42 @@ public sealed class DavProviderService : IDavProviderService
         return books;
     }
 
-    private async Task<Uri> GetPrimaryAddressbookAsync(
-        DavAccountConfig cfg, CancellationToken cancellationToken)
+    private async Task<Uri> SelectAddressBookAsync(
+        DavAccountConfig cfg, string? addressBookName, CancellationToken cancellationToken)
     {
         var books = await ListAddressbooksAsync(cfg, cancellationToken);
-        return books.FirstOrDefault(b => b.CanWrite)?.Href
-            ?? throw new InvalidOperationException($"No writable address books found for account '{cfg.AccountId}'.");
+        var name = addressBookName?.Trim();
+        if (string.IsNullOrEmpty(name))
+        {
+            return books.FirstOrDefault(b => b.CanWrite)?.Href
+                ?? throw new InvalidOperationException($"No writable address books found for account '{cfg.AccountId}'.");
+        }
+
+        var matches = books.Where(b => string.Equals(AddressBookName(b), name, StringComparison.OrdinalIgnoreCase)).ToList();
+        // A read-only namesake (e.g. a shared "Contacts") shouldn't block the one writable match.
+        var writable = matches.Where(b => b.CanWrite).ToList();
+        if (writable.Count == 1)
+            return writable[0].Href;
+        if (writable.Count > 1)
+            throw new ProviderOperationException(
+                $"Address book name '{name}' matches {writable.Count} writable address books; rename one to make it unique.");
+
+        var reason = matches.Count == 0 ? "was not found" : "is read-only";
+        throw new ProviderOperationException(
+            $"Address book '{name}' {reason}. {DescribeWritableBooks(books)}");
+    }
+
+    private static string DescribeWritableBooks(IEnumerable<DavPropResponse> books)
+    {
+        var names = books.Where(b => b.CanWrite)
+            .Select(AddressBookName)
+            .OfType<string>()
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Select(n => $"'{n}'")
+            .ToList();
+        return names.Count == 0
+            ? "No writable address book has a name; omit addressBookName to use the default."
+            : $"Writable address books: {string.Join(", ", names)}.";
     }
 
     /// <summary>
@@ -601,7 +734,16 @@ public sealed class DavProviderService : IDavProviderService
             $"To apply it to every occurrence, use the series eventId \"{DavResourceId.Encode(target.Href)}\".");
     }
 
-    private async Task<Uri> ValidateContactResourceAsync(DavAccountConfig cfg, string contactId, CancellationToken cancellationToken)
+    // Servers often return <d:displayname/> in a 404 propstat for an unnamed collection,
+    // which parses as "". Expose that as "no name" rather than an empty string.
+    private static string? AddressBookName(DavPropResponse book) =>
+        string.IsNullOrWhiteSpace(book.DisplayName) ? null : book.DisplayName.Trim();
+
+    private async Task<Uri> ValidateContactResourceAsync(DavAccountConfig cfg, string contactId, CancellationToken cancellationToken) =>
+        (await ResolveContactResourceAsync(cfg, contactId, cancellationToken)).Resource;
+
+    private async Task<(Uri Resource, DavPropResponse Book)> ResolveContactResourceAsync(
+        DavAccountConfig cfg, string contactId, CancellationToken cancellationToken)
     {
         Uri resource;
         try
@@ -615,9 +757,9 @@ public sealed class DavProviderService : IDavProviderService
         }
 
         var books = await ListAddressbooksAsync(cfg, cancellationToken);
-        if (!books.Any(b => IsCollectionChild(b.Href, resource)))
-            throw new ProviderOperationException("The contact is not in this account's address books.");
-        return resource;
+        var book = books.FirstOrDefault(b => IsCollectionChild(b.Href, resource))
+            ?? throw new ProviderOperationException("The contact is not in this account's address books.");
+        return (resource, book);
     }
 
     private static bool IsCollectionChild(Uri collection, Uri resource)

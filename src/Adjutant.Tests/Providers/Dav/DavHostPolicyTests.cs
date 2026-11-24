@@ -116,6 +116,21 @@ public class DavXmlAndMapperTests
     }
 
     [TestMethod]
+    public void AddressbookQuery_PropertyFilterMatchesAnyOfFnNOrUid()
+    {
+        var ns = System.Xml.Linq.XNamespace.Get("urn:ietf:params:xml:ns:carddav");
+
+        var plain = System.Xml.Linq.XDocument.Parse(DavXml.AddressbookQuery()).Root!.Element(ns + "filter")!;
+        Assert.IsFalse(plain.HasElements);
+
+        var filtered = System.Xml.Linq.XDocument.Parse(DavXml.AddressbookQuery(requirePropertyFilter: true)).Root!.Element(ns + "filter")!;
+        Assert.AreEqual("anyof", (string?)filtered.Attribute("test"));
+        CollectionAssert.AreEqual(
+            new[] { "FN", "N", "UID" },
+            filtered.Elements(ns + "prop-filter").Select(p => (string?)p.Attribute("name")).ToArray());
+    }
+
+    [TestMethod]
     public void DavResourceId_RoundTrips()
     {
         var uri = new Uri("https://p01-caldav.icloud.com/123/calendars/home/abc.ics");

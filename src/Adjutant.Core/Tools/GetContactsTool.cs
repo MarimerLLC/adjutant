@@ -82,6 +82,7 @@ public sealed class GetContactsTool(
                     id = c.Id,
                     accountId = c.AccountId,
                     displayName = c.DisplayName,
+                    addressBookName = c.AddressBookName,
                     emailAddresses = c.EmailAddresses.Select(e => e.Address),
                     phoneNumbers = c.PhoneNumbers.Select(p => p.Number),
                     companyName = c.CompanyName,

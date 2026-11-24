@@ -43,6 +43,7 @@ public sealed class GetContactDetailsTool(
                 id = contact.Id,
                 accountId = contact.AccountId,
                 displayName = contact.DisplayName,
+                addressBookName = contact.AddressBookName,
                 givenName = contact.GivenName,
                 surname = contact.Surname,
                 emailAddresses = contact.EmailAddresses.Select(e => new { e.Address, e.Label }),
