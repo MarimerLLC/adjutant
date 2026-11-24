@@ -85,6 +85,38 @@ public class UpdateEventToolTests
     }
 
     [TestMethod]
+    public async Task UpdateEvent_BlankTextIsUnchangedAndNoneClears()
+    {
+        var account = TestData.CreateAccount(id: "acc-1", provider: "google");
+
+        var regExp = new IAccountRegistryCreateExpectations();
+        regExp.Setups.GetAccountAsync("acc-1")
+            .ReturnValue(Task.FromResult<AccountInfo?>(account));
+
+        // body "" (a client filling in unset params) reaches the provider as null (unchanged);
+        // location "none" reaches it as "" (clear).
+        var provExp = new IProviderServiceCreateExpectations();
+        provExp.Setups.UpdateEventAsync(
+            "acc-1", "cal-1", "ev-1",
+            Arg.Any<string?>(), Arg.Any<DateTime?>(), Arg.Any<DateTime?>(),
+            "", Arg.Any<List<string>?>(), Arg.Any<string?>(), Arg.Any<bool?>(),
+            Arg.IsDefault<string?>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .ReturnValue(Task.FromResult(new EventWriteResult("ev-1", AttendeeNotifications.Sent)));
+
+        var factExp = new IProviderServiceFactoryCreateExpectations();
+        factExp.Setups.GetProvider("google").ReturnValue(provExp.Instance());
+
+        var tool = new UpdateEventTool(regExp.Instance(), factExp.Instance(),
+            NullLogger<UpdateEventTool>.Instance);
+
+        await tool.UpdateEvent("acc-1", "cal-1", "ev-1", location: " None ", body: "");
+
+        regExp.Verify();
+        factExp.Verify();
+        provExp.Verify();
+    }
+
+    [TestMethod]
     public async Task UpdateEvent_InvalidRecurrence_IsRefusedBeforeAnyLookup()
     {
         var regExp = new IAccountRegistryCreateExpectations();

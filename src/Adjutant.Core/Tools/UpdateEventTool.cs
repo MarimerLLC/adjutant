@@ -25,11 +25,11 @@ public sealed class UpdateEventTool(
         [Description("New event subject/title")] string? subject = null,
         [Description("New event start date and time (ISO 8601 format). For an all-day event, a date (yyyy-MM-dd).")] DateTime? start = null,
         [Description("New event end date and time (ISO 8601 format). For an all-day event, the exclusive end date (yyyy-MM-dd).")] DateTime? end = null,
-        [Description("New event location. An empty string clears it.")] string? location = null,
+        [Description("New event location. Pass `none` to clear it; an empty string leaves it unchanged.")] string? location = null,
         [Description("New list of attendee email addresses. Replaces the whole list; attendees already invited keep their response.")] List<string>? attendees = null,
         [Description("IANA timezone name for the event times (e.g. `America/Chicago`, `America/New_York`, `Europe/London`). Required when updating start or end times.")] string? timeZone = null,
         [Description("Set true to make the event all-day (start/end become dates, end exclusive) or false to make it timed. Requires both start and end. Pass true when moving an existing all-day event. Omit to leave it unchanged.")] bool? isAllDay = null,
-        [Description("New event description/body (HTML allowed). Replaces the existing description; an empty string clears it.")] string? body = null,
+        [Description("New event description/body (HTML allowed). Replaces the existing description. Pass `none` to clear it; an empty string leaves it unchanged.")] string? body = null,
         [Description("Set or replace the recurrence with an RFC 5545 RRULE such as `FREQ=WEEKLY;BYDAY=MO,WE;COUNT=10`, or pass `none` to make the event a single event again (this removes all its other occurrences). Applies to the whole series even when eventId is an occurrence. Omit to leave the recurrence unchanged.")] string? recurrence = null,
         [Description("Send the update to the attendees (default true). Set false to change the event without emailing them. Microsoft 365/Outlook.com always send updates.")] bool notifyAttendees = true)
     {
@@ -40,7 +40,10 @@ public sealed class UpdateEventTool(
         ToolGuard.RequireNonEmpty(calendarId, nameof(calendarId));
         ToolGuard.RequireNonEmpty(eventId, nameof(eventId));
         ToolGuard.RequireValidRecurrence(recurrence);
-        body = ToolGuard.StripCdataWrapper(body);
+        // Some clients send "" for optional parameters they mean to leave out, so blank means
+        // "unchanged" and only "none" clears (as for recurrence). Providers take "" as clear.
+        body = ClearableText(ToolGuard.StripCdataWrapper(body));
+        location = ClearableText(location);
 
         if (isAllDay.HasValue)
         {
@@ -79,4 +82,10 @@ public sealed class UpdateEventTool(
             throw ToolGuard.Failure("update event", ex);
         }
     }
+
+    /// <summary>Blank: no change (null). <c>none</c>: clear (""). Anything else as given.</summary>
+    private static string? ClearableText(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null
+        : value.Trim().Equals("none", StringComparison.OrdinalIgnoreCase) ? ""
+        : value;
 }

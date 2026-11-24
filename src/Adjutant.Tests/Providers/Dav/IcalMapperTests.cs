@@ -234,7 +234,7 @@ public class IcalMapperTests
     }
 
     [TestMethod]
-    public void Update_ReplacesTheRuleAndKeepsSkippedDates()
+    public void Update_ReplacingTheRuleDropsTheOldSeriesDatesAndOverrides()
     {
         var ics = SeriesWithOverride.Replace("RRULE:FREQ=DAILY;COUNT=5\r\n",
             "RRULE:FREQ=DAILY;COUNT=5\r\nEXDATE:20261006T150000Z\r\n");
@@ -242,9 +242,20 @@ public class IcalMapperTests
         var updated = IcalMapper.ApplyUpdates(ics, null, null, null, null, null, null,
             recurrence: RecurrenceRule.Parse("FREQ=WEEKLY;BYDAY=MO"));
 
-        var master = IcalMapper.GetPrimaryEvent(IcalMapper.LoadCalendar(updated)!)!;
+        var calendar = IcalMapper.LoadCalendar(updated)!;
+        var master = calendar.Events.Single();
         Assert.AreEqual(Ical.Net.FrequencyType.Weekly, master.RecurrenceRules.Single().Frequency);
-        Assert.AreEqual(1, master.ExceptionDates.Count);
+        Assert.AreEqual(0, master.ExceptionDates.Count);
+    }
+
+    [TestMethod]
+    public void Update_DateOnlyUntilOnATimedEventIsWrittenInUtc()
+    {
+        var updated = IcalMapper.ApplyUpdates(CreateEvent(false), null, null, null, null, null, null,
+            recurrence: RecurrenceRule.Parse("FREQ=DAILY;UNTIL=20261031"));
+
+        // The event is in Europe/Warsaw (UTC+1 on Oct 31).
+        StringAssert.Contains(updated, "UNTIL=20261031T225959Z");
     }
 
     [TestMethod]

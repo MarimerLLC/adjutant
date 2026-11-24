@@ -74,7 +74,8 @@ internal static class GraphEventWriter
             }
         }
 
-        return new EventWriteResult(createdEvent?.Id ?? string.Empty, AttendeeNotifications.SentByProvider);
+        return new EventWriteResult(createdEvent?.Id ?? string.Empty,
+            AttendeeNotifications.AnyIn(attendees) ? AttendeeNotifications.SentByProvider : AttendeeNotifications.NoAttendees);
     }
 
     public static async Task<EventWriteResult> UpdateAsync(
@@ -94,6 +95,10 @@ internal static class GraphEventWriter
         var change = RecurrenceRule.Parse(recurrence);
         var targetId = eventId;
         DateTime? seriesStart = start;
+        // The zone the series' dates are read in: the caller's, else the event's own, so an
+        // evening meeting west of UTC isn't anchored on the next (UTC) day.
+        var recurrenceZone = timeZone;
+        bool? hasAttendees = attendees is null ? null : AttendeeNotifications.AnyIn(attendees);
 
         if (change is not null)
         {
@@ -107,13 +112,17 @@ internal static class GraphEventWriter
                 existing = await GetForRecurrenceAsync(graphClient, targetId, cancellationToken);
             }
 
-            seriesStart ??= LocalStart(existing, timeZone);
+            recurrenceZone ??= existing?.OriginalStartTimeZone;
+            seriesStart ??= LocalStart(existing, recurrenceZone);
+            hasAttendees ??= existing?.Attendees is { } existingAttendees ? existingAttendees.Count > 0 : null;
         }
 
-        var eventUpdate = BuildUpdate(subject, start, end, location, attendees, timeZone, isAllDay, body, change, seriesStart);
+        var eventUpdate = BuildUpdate(subject, start, end, location, attendees, timeZone, isAllDay, body, change, seriesStart,
+            recurrenceZone);
 
         await graphClient.Me.Events[targetId].PatchAsync(eventUpdate, cancellationToken: cancellationToken);
-        return new EventWriteResult(targetId, AttendeeNotifications.SentByProvider);
+        return new EventWriteResult(targetId,
+            hasAttendees == false ? AttendeeNotifications.NoAttendees : AttendeeNotifications.SentByProvider);
     }
 
     /// <summary>
@@ -130,7 +139,8 @@ internal static class GraphEventWriter
         bool? isAllDay,
         string? body,
         RecurrenceChange? change,
-        DateTime? seriesStart)
+        DateTime? seriesStart,
+        string? recurrenceZone = null)
     {
         var eventUpdate = new Event();
 
@@ -169,7 +179,7 @@ internal static class GraphEventWriter
                     throw new Services.ProviderOperationException(
                         "Couldn't read the event's start to anchor the recurrence; pass start and end with it.");
                 eventUpdate.Recurrence = RecurrenceRule.ToGraph(
-                    RecurrenceRule.ToSpec(change.Pattern!, seriesStart.Value, timeZone, ProviderName));
+                    RecurrenceRule.ToSpec(change.Pattern!, seriesStart.Value, recurrenceZone ?? timeZone, ProviderName));
             }
         }
 
@@ -178,7 +188,7 @@ internal static class GraphEventWriter
 
     private static Task<Event?> GetForRecurrenceAsync(GraphServiceClient graphClient, string id, CancellationToken ct) =>
         graphClient.Me.Events[id].GetAsync(config =>
-            config.QueryParameters.Select = ["type", "seriesMasterId", "start", "isAllDay"], ct);
+            config.QueryParameters.Select = ["type", "seriesMasterId", "start", "isAllDay", "originalStartTimeZone", "attendees"], ct);
 
     /// <summary>
     /// The event's start as local wall time in <paramref name="timeZone"/>. Without a Prefer

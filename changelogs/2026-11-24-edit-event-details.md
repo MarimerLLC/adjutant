@@ -19,15 +19,16 @@ Google's default (`none`) applied and **attendees were never emailed**.
 
 ### `update_event`
 
-- New `body` parameter: replaces the description (HTML allowed); `""` clears it. A CDATA wrapper is
+- New `body` parameter: replaces the description (HTML allowed); `none` clears it. A CDATA wrapper is
   stripped, as `create_event` already did.
 - New `recurrence` parameter: an RFC 5545 RRULE (`FREQ=WEEKLY;BYDAY=MO,WE;COUNT=10`) sets or
   replaces the recurrence; `none` makes the event a single event again. A recurrence change always
   applies to the whole series. Given an occurrence id, the update goes to the series master and the
   result's `eventId` is the series id.
 - New `notifyAttendees` parameter (default `true`).
-- `location=""` now clears the location on Microsoft 365, Outlook.com and Google. These providers
-  used to ignore it; Exchange and CalDAV already cleared it.
+- `location="none"` clears the location on every provider. An empty `location` or `body` now means
+  "unchanged" everywhere, since some clients send `""` for parameters they leave out. Exchange and
+  CalDAV used to clear the location on `""`.
 - Replacing `attendees` keeps the response of people already invited on Google and CalDAV. These
   used to rebuild every attendee, which reset their replies.
 
@@ -39,7 +40,8 @@ Google's default (`none`) applied and **attendees were never emailed**.
 
 Both tools return `notifications`: `sent`, `not sent`,
 `sent by the provider to any attendees (it cannot be turned off)` (Microsoft 365 / Outlook.com,
-whose API always notifies), or `depends on the CalDAV server ...`.
+whose API always notifies), `depends on the CalDAV server ...`, or
+`none (the event has no attendees)`.
 
 A malformed or unsupported RRULE is refused before any provider call, with a message naming the
 problem.
@@ -50,6 +52,9 @@ problem.
   CalDAV take it as written. Microsoft 365, Outlook.com and Exchange take structured patterns (daily,
   weekly, absolute/relative monthly, absolute/relative yearly; numbered, end-date or no-end range).
   The rule is mapped to those, and a rule they can't express is refused rather than approximated.
+  A date-only `UNTIL` on a timed event is sent to Google and CalDAV as the end of that day in UTC,
+  as RFC 5545 requires. Without `timeZone`, Graph and Exchange read the series' dates in the event's
+  own zone.
 - **Microsoft 365 / Outlook.com**: the two providers now share `GraphEventWriter` for create and
   update. Removing a recurrence sends `"recurrence": null`. Kiota drops null properties, so the null
   goes out as additional data.
@@ -57,10 +62,11 @@ problem.
   EXDATE/RDATE lines. An instance id is resolved to its series for recurrence changes.
 - **Exchange (EWS)**: body and recurrence on update; recurrence on create in schema order;
   `StartTimeZone`/`EndTimeZone` are set from `timeZone`, so a series keeps its local time across DST.
+  `FirstDayOfWeek` follows the rule's `WKST` (Monday by default), as on Graph.
   `notifyAttendees=false` sends `SendToNone`. An occurrence id is resolved with
   `RecurringMasterItemId`.
-- **CalDAV**: `DESCRIPTION` and `RRULE` on update, and `RRULE` on create. Clearing the recurrence
-  also drops RDATE/EXDATE and overridden occurrences.
+- **CalDAV**: `DESCRIPTION` and `RRULE` on update, and `RRULE` on create. Changing or clearing the
+  recurrence also drops RDATE/EXDATE and overridden occurrences, whose dates belong to the old rule.
 - `IProviderService.CreateEventAsync`/`UpdateEventAsync` now return `EventWriteResult`
   (`EventId`, `Notifications`) and take `recurrence` and `notifyAttendees` (update also takes `body`).
 

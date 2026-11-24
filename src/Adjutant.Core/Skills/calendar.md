@@ -89,8 +89,9 @@ both `start` and `end` (dates, end exclusive, when `true`). **When moving
 an existing all-day event, pass `isAllDay=true`** — otherwise the new
 times are sent as timed values.
 
-- `body` replaces the description (HTML allowed); `""` clears it.
-  `location=""` clears the location.
+- `body` replaces the description (HTML allowed); `body="none"` clears
+  it. `location="none"` clears the location. An empty string leaves either
+  unchanged.
 - `attendees` replaces the whole list — include everyone who should stay.
   People already invited keep their accept/decline response.
 - `recurrence` sets or replaces the rule; `recurrence="none"` turns a
@@ -122,12 +123,14 @@ times are sent as timed values.
 | Every July 4 | `FREQ=YEARLY;BYMONTH=7;BYMONTHDAY=4` |
 | Weekly until the end of 2027 | `FREQ=WEEKLY;UNTIL=20271231T235959Z` |
 
-Use `COUNT` or `UNTIL`, not both; omit both for no end. Write `UNTIL` in
-UTC (`...T235959Z`) for timed events. Microsoft 365, Outlook.com and
-Exchange accept only the shapes in the table (no `BYHOUR`, one
-`BYMONTHDAY`, week numbers 1–4 or -1); a rule they can't store is refused
-with a message — rewrite it rather than retrying. Google and CalDAV accept
-any valid RRULE.
+Use `COUNT` or `UNTIL`, not both; omit both for no end. A date-only
+`UNTIL` (`UNTIL=20271231`) on a timed event is taken as the end of that day
+in `timeZone`. Microsoft 365, Outlook.com and Exchange accept only the
+shapes in the table (no `BYHOUR`, one `BYMONTHDAY`, week numbers 1–4 or -1,
+one day per numbered `BYDAY` — use `BYSETPOS` for "the first/last of these
+days" — and `BYMONTH` on a yearly rule that names a day); a rule they can't
+store is refused with a message — rewrite it rather than retrying. Google
+and CalDAV accept any valid RRULE.
 
 ### Attendee notifications
 
@@ -140,6 +143,7 @@ any valid RRULE.
   meeting, even with `notifyAttendees=false`.
 - `depends on the CalDAV server ...` — iCloud and similar servers may or
   may not send invitations themselves.
+- `none (the event has no attendees)` — there was no one to notify.
 
 ### `delete_event(accountId, calendarId, eventId)`
 

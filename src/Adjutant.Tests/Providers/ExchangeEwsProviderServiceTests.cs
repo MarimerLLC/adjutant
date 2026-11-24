@@ -162,6 +162,31 @@ public class ExchangeEwsProviderServiceTests
     }
 
     [TestMethod]
+    public async Task UpdateEvent_WithoutTimeZoneAnchorsTheSeriesInTheItemsOwnZone()
+    {
+        using var ews = new Ews();
+        // 01:00Z on Dec 2 is 19:00 on Dec 1 in Chicago.
+        ews.Items["A"] = "<t:CalendarItemType>Single</t:CalendarItemType><t:Start>2026-12-02T01:00:00Z</t:Start>" +
+            "<t:StartTimeZoneId>Central Standard Time</t:StartTimeZoneId>";
+
+        await ews.Provider().UpdateEventAsync("ex", "primary", "A", recurrence: "FREQ=WEEKLY;BYDAY=TU;COUNT=4");
+
+        CollectionAssert.Contains(ews.Requests[0].Descendants(T + "FieldURI").Select(f => (string?)f.Attribute("FieldURI")).ToList(),
+            "calendar:StartTimeZoneId");
+        Assert.AreEqual("2026-12-01", ews.Requests.Last().Descendants(T + "StartDate").Single().Value);
+    }
+
+    [TestMethod]
+    public async Task CreateEvent_WithoutAttendeesReportsNoOneToNotify()
+    {
+        using var ews = new Ews();
+        var result = await ews.Provider().CreateEventAsync("ex", null, "Focus", new DateTime(2026, 12, 1, 9, 0, 0),
+            new DateTime(2026, 12, 1, 10, 0, 0));
+
+        Assert.AreEqual(AttendeeNotifications.NoAttendees, result.Notifications);
+    }
+
+    [TestMethod]
     public async Task UpdateEvent_ClearsRecurrenceWithoutNotifying()
     {
         using var ews = new Ews();

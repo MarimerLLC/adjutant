@@ -162,10 +162,40 @@ public class RecurrenceRuleTests
     [DataRow("FREQ=DAILY;BYHOUR=9", "BYHOUR")]
     [DataRow("FREQ=WEEKLY;BYDAY=2MO", "numbered days")]
     [DataRow("FREQ=YEARLY;BYWEEKNO=20", "BYWEEKNO")]
+    [DataRow("FREQ=MONTHLY;BYDAY=1MO,1WE", "BYSETPOS")]
+    [DataRow("FREQ=YEARLY;BYDAY=-1MO", "needs BYMONTH")]
+    [DataRow("FREQ=YEARLY;BYMONTHDAY=4", "needs BYMONTH")]
     public void Graph_RefusesWhatItCannotExpress(string rule, string expected)
     {
         var ex = Assert.ThrowsExactly<ProviderOperationException>(() => ToGraph(rule));
         StringAssert.Contains(ex.Message, expected);
+    }
+
+    [TestMethod]
+    public void Graph_BareYearlyUsesTheStartDate()
+    {
+        var graph = ToGraph("FREQ=YEARLY");
+
+        Assert.AreEqual(RecurrencePatternType.AbsoluteYearly, graph.Pattern!.Type);
+        Assert.AreEqual(12, graph.Pattern.Month);
+        Assert.AreEqual(2, graph.Pattern.DayOfMonth);
+    }
+
+    [TestMethod]
+    public void RuleFor_TimedEventGetsAUtcEndOfDayUntil()
+    {
+        var change = RecurrenceRule.Parse("FREQ=WEEKLY;UNTIL=20271231;BYDAY=TU")!;
+
+        // 23:59:59 on Dec 31 in Chicago (UTC-6) is 05:59:59Z on Jan 1.
+        Assert.AreEqual("FREQ=WEEKLY;UNTIL=20280101T055959Z;BYDAY=TU", RecurrenceRule.RuleFor(change, true, "America/Chicago"));
+        Assert.AreEqual("FREQ=WEEKLY;UNTIL=20271231;BYDAY=TU", RecurrenceRule.RuleFor(change, false, "America/Chicago"));
+    }
+
+    [TestMethod]
+    public void RuleFor_LeavesADateTimeUntilAlone()
+    {
+        var change = RecurrenceRule.Parse("FREQ=DAILY;UNTIL=20271231T235959Z")!;
+        Assert.AreEqual("FREQ=DAILY;UNTIL=20271231T235959Z", RecurrenceRule.RuleFor(change, true, "America/Chicago"));
     }
 
     [TestMethod]
@@ -176,8 +206,10 @@ public class RecurrenceRuleTests
         CollectionAssert.AreEqual(new[] { "WeeklyRecurrence", "NumberedRecurrence" },
             recurrence.Elements().Select(e => e.Name.LocalName).ToArray());
         var weekly = recurrence.Element(T + "WeeklyRecurrence")!;
-        CollectionAssert.AreEqual(new[] { "Interval", "DaysOfWeek" }, weekly.Elements().Select(e => e.Name.LocalName).ToArray());
+        CollectionAssert.AreEqual(new[] { "Interval", "DaysOfWeek", "FirstDayOfWeek" }, weekly.Elements().Select(e => e.Name.LocalName).ToArray());
         Assert.AreEqual("Monday Wednesday", weekly.Element(T + "DaysOfWeek")!.Value);
+        // RFC 5545's default WKST, not Exchange's Sunday.
+        Assert.AreEqual("Monday", weekly.Element(T + "FirstDayOfWeek")!.Value);
         var range = recurrence.Element(T + "NumberedRecurrence")!;
         CollectionAssert.AreEqual(new[] { "StartDate", "NumberOfOccurrences" }, range.Elements().Select(e => e.Name.LocalName).ToArray());
         Assert.AreEqual("2026-12-02", range.Element(T + "StartDate")!.Value);

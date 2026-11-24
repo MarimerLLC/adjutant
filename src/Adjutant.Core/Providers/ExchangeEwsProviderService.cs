@@ -392,7 +392,7 @@ public sealed class ExchangeEwsProviderService : IExchangeProviderService
         var doc = await SendAsync(accountId, create, cancellationToken);
         var id = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "ItemId")?.Attribute("Id")?.Value
             ?? throw new ProviderOperationException("EWS did not return the created calendar item id.");
-        return new EventWriteResult(id, AttendeeNotifications.For(notifyAttendees));
+        return new EventWriteResult(id, AttendeeNotifications.For(notifyAttendees, AttendeeNotifications.AnyIn(attendees)));
     }
 
     public async Task<EventWriteResult> UpdateEventAsync(string accountId, string calendarId, string eventId, string? subject = null,
@@ -405,8 +405,11 @@ public sealed class ExchangeEwsProviderService : IExchangeProviderService
 
         // A recurrence change goes to the series master, which an occurrence id has to be resolved to.
         var target = change is null
-            ? new EwsItemRef(eventId, await GetChangeKeyAsync(accountId, eventId, cancellationToken), null)
+            ? new EwsItemRef(eventId, await GetChangeKeyAsync(accountId, eventId, cancellationToken), null, null)
             : await GetRecurrenceTargetAsync(accountId, eventId, cancellationToken);
+        // The zone the series' dates are read in: the caller's, else the item's own, so an
+        // evening meeting west of UTC isn't anchored on the next (UTC) day.
+        var recurrenceZone = timeZone ?? target.StartTimeZoneId;
 
         var updates = new List<XElement>();
         if (subject is not null) updates.Add(CalendarSetField("item:Subject", new XElement(T + "Subject", subject)));
@@ -422,10 +425,10 @@ public sealed class ExchangeEwsProviderService : IExchangeProviderService
         }
         else if (change is not null)
         {
-            var seriesStart = start ?? LocalStart(target, tz)
+            var seriesStart = start ?? LocalStart(target, TimeZoneHelper.TryGetTimeZone(recurrenceZone) ?? TimeZoneInfo.Utc)
                 ?? throw new ProviderOperationException("Couldn't read the event's start to anchor the recurrence; pass start and end with it.");
             updates.Add(CalendarSetField("calendar:Recurrence",
-                RecurrenceRule.ToEws(RecurrenceRule.ToSpec(change.Pattern!, seriesStart, timeZone, "Exchange"), T)));
+                RecurrenceRule.ToEws(RecurrenceRule.ToSpec(change.Pattern!, seriesStart, recurrenceZone, "Exchange"), T)));
             if (WindowsZoneId(timeZone) is { } zoneId)
             {
                 updates.Add(CalendarSetField("calendar:StartTimeZone", new XElement(T + "StartTimeZone", new XAttribute("Id", zoneId))));
@@ -439,11 +442,12 @@ public sealed class ExchangeEwsProviderService : IExchangeProviderService
             new XAttribute("SendMeetingInvitationsOrCancellations", notifyAttendees ? "SendToAllAndSaveCopy" : "SendToNone"),
             new XElement(M + "ItemChanges", new XElement(T + "ItemChange", id, new XElement(T + "Updates", updates))));
         await SendAsync(accountId, operation, cancellationToken);
-        return new EventWriteResult(target.Id, AttendeeNotifications.For(notifyAttendees));
+        return new EventWriteResult(target.Id,
+            AttendeeNotifications.For(notifyAttendees, attendees is null || AttendeeNotifications.AnyIn(attendees)));
     }
 
-    /// <summary>A calendar item to update, with its start (UTC) when it was read.</summary>
-    private sealed record EwsItemRef(string Id, string? ChangeKey, DateTime? StartUtc);
+    /// <summary>A calendar item to update, with its start (UTC) and time zone when they were read.</summary>
+    private sealed record EwsItemRef(string Id, string? ChangeKey, DateTime? StartUtc, string? StartTimeZoneId);
 
     /// <summary>
     /// Resolves <paramref name="eventId"/> to the item that carries the recurrence: itself, or
@@ -452,7 +456,7 @@ public sealed class ExchangeEwsProviderService : IExchangeProviderService
     private async Task<EwsItemRef> GetRecurrenceTargetAsync(string accountId, string eventId, CancellationToken ct)
     {
         XElement Shape() => new(M + "ItemShape", new XElement(T + "BaseShape", "IdOnly"),
-            new XElement(T + "AdditionalProperties", Field("calendar:CalendarItemType"), Field("calendar:Start")));
+            new XElement(T + "AdditionalProperties", Field("calendar:CalendarItemType"), Field("calendar:Start"), Field("calendar:StartTimeZoneId")));
 
         async Task<XElement> GetAsync(XElement itemId)
         {
@@ -470,7 +474,8 @@ public sealed class ExchangeEwsProviderService : IExchangeProviderService
         return new EwsItemRef(
             itemIdElement?.Attribute("Id")?.Value ?? eventId,
             itemIdElement?.Attribute("ChangeKey")?.Value,
-            ParseNullableDate(Child(item, "Start")));
+            ParseNullableDate(Child(item, "Start")),
+            Child(item, "StartTimeZoneId"));
     }
 
     /// <summary>The item's start as local wall time in <paramref name="zone"/>.</summary>

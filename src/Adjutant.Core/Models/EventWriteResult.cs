@@ -27,5 +27,13 @@ public static class AttendeeNotifications
     /// <summary>CalDAV has no client-side send; the server may schedule implicitly.</summary>
     public const string ServerDependent = "depends on the CalDAV server (some send invitations, some don't)";
 
-    public static string For(bool notifyAttendees) => notifyAttendees ? Sent : NotSent;
+    /// <summary>The event has no attendees, so there was no one to notify.</summary>
+    public const string NoAttendees = "none (the event has no attendees)";
+
+    public static string For(bool notifyAttendees, bool hasAttendees = true) =>
+        !hasAttendees ? NoAttendees : notifyAttendees ? Sent : NotSent;
+
+    /// <summary>Whether an attendees argument names anyone.</summary>
+    public static bool AnyIn(IEnumerable<string>? attendees) =>
+        attendees?.Any(a => !string.IsNullOrWhiteSpace(a)) == true;
 }

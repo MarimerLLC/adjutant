@@ -20,6 +20,15 @@ public class GoogleEventUpdateTests
     }
 
     [TestMethod]
+    public void ApplyRecurrence_DateOnlyUntilOnATimedEventIsSentInUtc()
+    {
+        var lines = GoogleProviderService.ApplyRecurrence(null, RecurrenceRule.Parse("FREQ=WEEKLY;BYDAY=TU;UNTIL=20271231")!,
+            timedEvent: true, timeZone: "America/Chicago");
+
+        CollectionAssert.AreEqual(new[] { "RRULE:FREQ=WEEKLY;BYDAY=TU;UNTIL=20280101T055959Z" }, lines);
+    }
+
+    [TestMethod]
     public void ApplyRecurrence_ClearIsAnEmptyListNotNull()
     {
         var lines = GoogleProviderService.ApplyRecurrence(["RRULE:FREQ=DAILY", "RDATE:20261224T090000Z"], RecurrenceChange.Clear);

@@ -555,11 +555,11 @@ Update existing calendar event. Only the parameters passed are changed.
 - `subject` (optional): New subject
 - `start` (optional): New start time
 - `end` (optional): New end time
-- `location` (optional): New location; `""` clears it
+- `location` (optional): New location; `none` clears it (`""` leaves it unchanged)
 - `attendees` (optional): New attendee list (replaces it; attendees already invited keep their response)
 - `timeZone` (optional): IANA time zone for `start`/`end` and the recurrence
 - `isAllDay` (optional): Convert to all-day (`true`) or timed (`false`); needs `start` and `end`
-- `body` (optional): New description (HTML allowed); `""` clears it
+- `body` (optional): New description (HTML allowed); `none` clears it (`""` leaves it unchanged)
 - `recurrence` (optional): RRULE to set or replace the recurrence, or `none` to make it a single event.
   Always applies to the whole series: given an occurrence id, the update goes to its series and the
   result's `eventId` is the series id. Other changes made through an occurrence id change only that
@@ -595,8 +595,12 @@ structured patterns, so only rules they can express are accepted: daily (`FREQ=D
 `FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR` for weekdays), weekly on given days, monthly on a day
 (`BYMONTHDAY=15`) or an nth weekday (`BYDAY=2TU`, `BYDAY=-1FR`, or `BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1`),
 and yearly on a month day or an nth weekday of a month. End with `COUNT=n` or `UNTIL=...`, or leave it
-open. Anything else (`BYHOUR`, several `BYMONTHDAY` values, a fifth-week day, ...) is refused with a
-message rather than approximated. Exchange also refuses yearly rules with `INTERVAL` above 1.
+open. Anything else (`BYHOUR`, several `BYMONTHDAY` values, a fifth-week day, several numbered days
+such as `1MO,1WE`, a yearly `BYDAY`/`BYMONTHDAY` without `BYMONTH`, ...) is refused with a message
+rather than approximated. Exchange also refuses yearly rules with `INTERVAL` above 1. A date-only
+`UNTIL` on a timed event is sent to Google and CalDAV as the end of that day in `timeZone`, in UTC.
+
+When an event has no attendees, `notifications` is `none (the event has no attendees)`.
 
 #### `delete_event`
 Delete calendar event (requires organizer permissions or edit access).

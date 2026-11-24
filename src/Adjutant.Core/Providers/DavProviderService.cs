@@ -284,7 +284,8 @@ public sealed class DavProviderService : IDavProviderService
 
         _logger.LogInformation("Created CalDAV event {Href} on account {AccountId}", objectHref, accountId);
         // CalDAV has no client-side send; servers with implicit scheduling notify by themselves.
-        return new EventWriteResult(DavResourceId.Encode(objectHref), AttendeeNotifications.ServerDependent);
+        return new EventWriteResult(DavResourceId.Encode(objectHref),
+            AttendeeNotifications.AnyIn(attendees) ? AttendeeNotifications.ServerDependent : AttendeeNotifications.NoAttendees);
     }
 
     public async Task<EventWriteResult> UpdateEventAsync(
@@ -319,7 +320,9 @@ public sealed class DavProviderService : IDavProviderService
             target.Href, cfg.Username, cfg.Password, updated, "text/calendar; charset=utf-8",
             cfg.Preset, DavServiceKind.CalDav, entry, ifMatch: get.Etag, cancellationToken);
         EnsureHttpSuccess(put, "update event");
-        return new EventWriteResult(eventId, AttendeeNotifications.ServerDependent);
+        return new EventWriteResult(eventId, attendees is not null && !AttendeeNotifications.AnyIn(attendees)
+            ? AttendeeNotifications.NoAttendees
+            : AttendeeNotifications.ServerDependent);
     }
 
     public async Task DeleteEventAsync(

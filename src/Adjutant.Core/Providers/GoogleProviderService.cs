@@ -870,7 +870,7 @@ public class GoogleProviderService : IGoogleProviderService
                 newEvent.Attendees = MergeAttendees(null, attendees);
 
             if (change is { IsClear: false })
-                newEvent.Recurrence = ApplyRecurrence(null, change);
+                newEvent.Recurrence = ApplyRecurrence(null, change, !isAllDay, timeZone);
 
             var request = service.Events.Insert(newEvent, targetCalendarId);
             // Google's default is to email no one, so invitations must be asked for.
@@ -880,7 +880,8 @@ public class GoogleProviderService : IGoogleProviderService
             var createdEvent = await request.ExecuteAsync(cancellationToken);
 
             _logger.LogInformation("Created event {EventId} in Google account {AccountId}", createdEvent.Id, accountId);
-            return new EventWriteResult(createdEvent.Id, AttendeeNotifications.For(notifyAttendees));
+            return new EventWriteResult(createdEvent.Id,
+                AttendeeNotifications.For(notifyAttendees, AttendeeNotifications.AnyIn(attendees)));
         }
         catch (Exception ex)
         {
@@ -937,10 +938,6 @@ public class GoogleProviderService : IGoogleProviderService
             {
                 existingEvent.Description = body;
             }
-            if (change is not null)
-            {
-                existingEvent.Recurrence = ApplyRecurrence(existingEvent.Recurrence, change);
-            }
             // Replacing the whole EventDateTime switches between date (all-day) and dateTime.
             if (start.HasValue)
             {
@@ -954,6 +951,12 @@ public class GoogleProviderService : IGoogleProviderService
             {
                 existingEvent.Attendees = MergeAttendees(existingEvent.Attendees, attendees);
             }
+            // After the times, so the rule matches whether the event is now timed or all-day.
+            if (change is not null)
+            {
+                existingEvent.Recurrence = ApplyRecurrence(existingEvent.Recurrence, change,
+                    existingEvent.Start?.Date is null, timeZone ?? existingEvent.Start?.TimeZone);
+            }
 
             var request = service.Events.Update(existingEvent, calendarId, targetId);
             // Google's default is to email no one, so updates must be asked for.
@@ -963,7 +966,8 @@ public class GoogleProviderService : IGoogleProviderService
             await request.ExecuteAsync(cancellationToken);
 
             _logger.LogInformation("Updated event {EventId} in Google account {AccountId}", targetId, accountId);
-            return new EventWriteResult(targetId, AttendeeNotifications.For(notifyAttendees));
+            return new EventWriteResult(targetId,
+                AttendeeNotifications.For(notifyAttendees, existingEvent.Attendees?.Count > 0));
         }
         catch (Exception ex)
         {
@@ -1698,7 +1702,8 @@ public class GoogleProviderService : IGoogleProviderService
     /// keeps EXDATE/RDATE lines (skipped or added dates). Clearing removes every line; it is
     /// an empty list, not null, so the full-resource update sends it.
     /// </summary>
-    internal static List<string> ApplyRecurrence(IList<string>? existing, RecurrenceChange change)
+    internal static List<string> ApplyRecurrence(IList<string>? existing, RecurrenceChange change,
+        bool timedEvent = false, string? timeZone = null)
     {
         if (change.IsClear)
             return [];
@@ -1706,7 +1711,7 @@ public class GoogleProviderService : IGoogleProviderService
         var kept = (existing ?? [])
             .Where(line => !line.StartsWith("RRULE:", StringComparison.OrdinalIgnoreCase)
                 && !line.StartsWith("EXRULE:", StringComparison.OrdinalIgnoreCase));
-        return [$"RRULE:{change.Rule}", .. kept];
+        return [$"RRULE:{RecurrenceRule.RuleFor(change, timedEvent, timeZone)}", .. kept];
     }
 
     /// <summary>

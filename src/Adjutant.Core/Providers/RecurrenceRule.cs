@@ -62,7 +62,7 @@ internal sealed record RecurrenceSpec(
 /// provider's format. Google and CalDAV take the rule as written; Graph and EWS take structured
 /// patterns, so rules they cannot express are refused rather than approximated.
 /// </summary>
-public static class RecurrenceRule
+public static partial class RecurrenceRule
 {
     public const string ClearValue = "none";
 
@@ -104,6 +104,29 @@ public static class RecurrenceRule
         // Ical.Net itself refuses COUNT with UNTIL, and COUNT or INTERVAL below 1.
         return RecurrenceChange.For(pattern, text);
     }
+
+    /// <summary>
+    /// The rule text for providers that take it as written (Google, CalDAV). RFC 5545 requires
+    /// UNTIL to be a UTC date-time when the event is timed, so a date-only UNTIL becomes the end
+    /// of that day in <paramref name="timeZone"/> (UTC when unknown), in UTC.
+    /// </summary>
+    public static string RuleFor(RecurrenceChange change, bool timedEvent, string? timeZone)
+    {
+        var rule = change.Rule ?? throw new InvalidOperationException("A cleared recurrence has no rule.");
+        if (!timedEvent)
+            return rule;
+
+        return DateOnlyUntil().Replace(rule, match =>
+        {
+            var date = DateTime.ParseExact(match.Groups[1].Value, "yyyyMMdd", CultureInfo.InvariantCulture);
+            var zone = TimeZoneHelper.TryGetTimeZone(timeZone) ?? TimeZoneInfo.Utc;
+            var utc = TimeZoneInfo.ConvertTimeToUtc(date.AddDays(1).AddSeconds(-1), zone);
+            return "UNTIL=" + utc.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture);
+        });
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"UNTIL=(\d{8})(?=;|$)")]
+    private static partial System.Text.RegularExpressions.Regex DateOnlyUntil();
 
     private static bool HasCount(IcalPattern p) => p.Count != int.MinValue;
     private static bool HasUntil(IcalPattern p) => p.Until != DateTime.MinValue;
@@ -175,6 +198,10 @@ public static class RecurrenceRule
 
             case FrequencyType.Yearly:
                 RequireNone(provider, pattern.ByMonth.Count > 1, "only one BYMONTH value is supported");
+                // Without BYMONTH, BYDAY and BYMONTHDAY apply across the whole year (BYDAY=-1MO is
+                // the year's last Monday), which these patterns can't express.
+                RequireNone(provider, pattern.ByMonth.Count == 0 && (days.Count > 0 || pattern.ByMonthDay.Count > 0),
+                    "a YEARLY rule with BYDAY or BYMONTHDAY also needs BYMONTH");
                 month = pattern.ByMonth.Count == 1 ? pattern.ByMonth[0] : start.Month;
                 if (days.Count > 0)
                 {
@@ -235,7 +262,11 @@ public static class RecurrenceRule
             var offsets = pattern.ByDay.Select(d => d.Offset).Distinct().ToList();
             RequireNone(provider, offsets.Contains(int.MinValue),
                 "a monthly or yearly BYDAY needs a week number, such as 2TU (second Tuesday) or -1FR (last Friday)");
-            RequireNone(provider, offsets.Count > 1, "all BYDAY values must use the same week number");
+            // 1MO,1WE means the first Monday and the first Wednesday; these patterns would read it as
+            // the first day that is either. "The first of several days" is BYSETPOS.
+            RequireNone(provider, pattern.ByDay.Count > 1,
+                "a numbered BYDAY such as 2TU takes one day; for the first or last of several days use BYSETPOS " +
+                "(BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1)");
             index = offsets[0];
         }
 
@@ -339,7 +370,9 @@ public static class RecurrenceRule
         {
             RecurrenceKind.Daily => new XElement(t + "DailyRecurrence", Interval()),
             RecurrenceKind.Weekly => new XElement(t + "WeeklyRecurrence", Interval(),
-                new XElement(t + "DaysOfWeek", string.Join(' ', spec.Days.Select(d => d.ToString())))),
+                new XElement(t + "DaysOfWeek", string.Join(' ', spec.Days.Select(d => d.ToString()))),
+                // Exchange defaults to Sunday; RFC 5545 (WKST) to Monday. It matters for INTERVAL > 1.
+                new XElement(t + "FirstDayOfWeek", spec.FirstDayOfWeek.ToString())),
             RecurrenceKind.AbsoluteMonthly => new XElement(t + "AbsoluteMonthlyRecurrence", Interval(), DayOfMonth()),
             RecurrenceKind.RelativeMonthly => new XElement(t + "RelativeMonthlyRecurrence", Interval(),
                 new XElement(t + "DaysOfWeek", EwsRelativeDay(spec.Days)), Index()),
