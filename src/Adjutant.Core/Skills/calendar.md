@@ -59,7 +59,7 @@ the owner, so they always report `notResponded`.
 
 Full event including description/body. All four parameters are required.
 
-### `create_event(subject, start, end, accountId?, calendarId?, location?, attendees?[], body?, timeZone, isAllDay?)`
+### `create_event(subject, start, end, accountId?, calendarId?, location?, attendees?[], body?, timeZone, isAllDay?, recurrence?, notifyAttendees?)`
 
 - `start` and `end` are ISO 8601 (e.g. `2026-05-14T10:00:00`).
 - `isAllDay=true` creates an all-day event. Pass dates (`yyyy-MM-dd`);
@@ -75,15 +75,71 @@ Full event including description/body. All four parameters are required.
   is also accepted for the default calendar; any other value
   must be an id from `list_calendars`.
 - `attendees` is an array of email addresses.
+- `recurrence` makes the event repeat: an RRULE (see
+  [Recurrence](#recurrence)). `start`/`end` are the first occurrence.
+- `notifyAttendees` (default `true`) sends invitations. See
+  [Attendee notifications](#attendee-notifications).
 
-### `update_event(accountId, calendarId, eventId, subject?, start?, end?, location?, attendees?[], timeZone?, isAllDay?)`
+### `update_event(accountId, calendarId, eventId, subject?, start?, end?, location?, attendees?[], timeZone?, isAllDay?, body?, recurrence?, notifyAttendees?)`
 
 All except identifiers are optional; pass only what you want to change.
-When updating `start` or `end`, also pass `timeZone`.
+When updating `start`, `end` or `recurrence`, also pass `timeZone`.
 `isAllDay=true`/`false` converts the event to all-day/timed and requires
 both `start` and `end` (dates, end exclusive, when `true`). **When moving
 an existing all-day event, pass `isAllDay=true`** — otherwise the new
 times are sent as timed values.
+
+- `body` replaces the description (HTML allowed); `""` clears it.
+  `location=""` clears the location.
+- `attendees` replaces the whole list — include everyone who should stay.
+  People already invited keep their accept/decline response.
+- `recurrence` sets or replaces the rule; `recurrence="none"` turns a
+  series back into a single event (its other occurrences are removed).
+- **Recurring events:** an occurrence id from `get_calendar_events`
+  changes only that occurrence — except that a `recurrence` change always
+  applies to the whole series. The result's `eventId` is then the series
+  id. (CalDAV accounts reject occurrence ids for updates; use the series id
+  the error names.)
+- `notifyAttendees=false` changes the event without emailing attendees,
+  where the provider allows it.
+- Check the result's `notifications` field before telling the user that
+  attendees were (or weren't) told.
+
+### Recurrence
+
+`recurrence` is an RFC 5545 RRULE value (the `RRULE:` prefix is optional):
+
+| Meaning | RRULE |
+|---------|-------|
+| Every weekday | `FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR` |
+| Every other day | `FREQ=DAILY;INTERVAL=2` |
+| Mondays and Wednesdays, 10 times | `FREQ=WEEKLY;BYDAY=MO,WE;COUNT=10` |
+| Every two weeks on Friday | `FREQ=WEEKLY;INTERVAL=2;BYDAY=FR` |
+| The 15th of each month | `FREQ=MONTHLY;BYMONTHDAY=15` |
+| Second Tuesday of each month | `FREQ=MONTHLY;BYDAY=2TU` |
+| Last Friday of each month | `FREQ=MONTHLY;BYDAY=-1FR` |
+| Last weekday of each month | `FREQ=MONTHLY;BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1` |
+| Every July 4 | `FREQ=YEARLY;BYMONTH=7;BYMONTHDAY=4` |
+| Weekly until the end of 2027 | `FREQ=WEEKLY;UNTIL=20271231T235959Z` |
+
+Use `COUNT` or `UNTIL`, not both; omit both for no end. Write `UNTIL` in
+UTC (`...T235959Z`) for timed events. Microsoft 365, Outlook.com and
+Exchange accept only the shapes in the table (no `BYHOUR`, one
+`BYMONTHDAY`, week numbers 1–4 or -1); a rule they can't store is refused
+with a message — rewrite it rather than retrying. Google and CalDAV accept
+any valid RRULE.
+
+### Attendee notifications
+
+`create_event` and `update_event` return `notifications`:
+
+- `sent` — attendees were emailed (Google, Exchange).
+- `not sent` — `notifyAttendees=false` was honoured (Google, Exchange).
+- `sent by the provider to any attendees (it cannot be turned off)` —
+  Microsoft 365 / Outlook.com always email attendees of an organizer's
+  meeting, even with `notifyAttendees=false`.
+- `depends on the CalDAV server ...` — iCloud and similar servers may or
+  may not send invitations themselves.
 
 ### `delete_event(accountId, calendarId, eventId)`
 
@@ -184,6 +240,16 @@ update_event(accountId, calendarId, eventId,
             start="...", end="...", timeZone="...")
 ```
 
+### Change the description, or make a meeting weekly
+
+```
+update_event(accountId, calendarId, eventId,
+            body="<p>Agenda: Q3 budget</p>")
+update_event(accountId, calendarId, eventId,
+            recurrence="FREQ=WEEKLY;BYDAY=TU;COUNT=8", timeZone="America/Chicago")
+update_event(accountId, calendarId, eventId, recurrence="none")   // back to one event
+```
+
 ### Respond to an invite
 
 > Use the `respond_to_invite` prompt — it adds a conflict check before
@@ -214,9 +280,9 @@ multi-account availability, fan out and merge.
   Bucket them by `start_date`; don't derive the day by converting
   `start_utc` yourself. To create one, pass `isAllDay=true` with date-only
   `start`/`end` (end exclusive) to `create_event`.
-- **Recurring events**: not directly supported via tool parameters in
-  the current version. `get_calendar_events` returns expanded
-  occurrences; `create_event` creates single instances.
+- **Recurring events**: `get_calendar_events` returns expanded
+  occurrences, each with its own eventId. Create or change a series with
+  the `recurrence` parameter; it always acts on the whole series.
 - **Read-only sources**: `ics` and `json` calendars cannot be written
   to. `list_calendars` reports `canEdit=false`. Verify before calling
   `create_event`/`update_event`/`delete_event`.

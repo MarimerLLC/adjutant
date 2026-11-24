@@ -27,8 +27,8 @@ public class CreateEventToolTests
         var provExp = new IProviderServiceCreateExpectations();
         provExp.Setups.CreateEventAsync(
             "acc-1", Arg.Any<string?>(), "Meeting", Arg.Any<DateTime>(), Arg.Any<DateTime>(),
-            Arg.Any<string?>(), Arg.Any<List<string>?>(), Arg.Any<string?>(), Arg.Any<string?>(), false, Arg.Any<CancellationToken>())
-            .ReturnValue(Task.FromResult("new-event-id"));
+            Arg.Any<string?>(), Arg.Any<List<string>?>(), Arg.Any<string?>(), Arg.Any<string?>(), false, Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .ReturnValue(Task.FromResult(new EventWriteResult("new-event-id", AttendeeNotifications.Sent)));
 
         var factExp = new IProviderServiceFactoryCreateExpectations();
         factExp.Setups.GetProvider("microsoft365").ReturnValue(provExp.Instance());
@@ -45,6 +45,56 @@ public class CreateEventToolTests
         regExp.Verify();
         factExp.Verify();
         provExp.Verify();
+    }
+
+    [TestMethod]
+    public async Task CreateEvent_PassesRecurrenceAndNotifyAndReportsNotifications()
+    {
+        var account = TestData.CreateAccount(id: "acc-1", provider: "google");
+
+        var regExp = new IAccountRegistryCreateExpectations();
+        regExp.Setups.GetAccountAsync("acc-1")
+            .ReturnValue(Task.FromResult<AccountInfo?>(account));
+
+        var provExp = new IProviderServiceCreateExpectations();
+        provExp.Setups.CreateEventAsync(
+            "acc-1", Arg.Any<string?>(), "Standup", Arg.Any<DateTime>(), Arg.Any<DateTime>(),
+            Arg.Any<string?>(), Arg.Any<List<string>?>(), Arg.Any<string?>(), Arg.Any<string?>(), false,
+            "FREQ=DAILY;COUNT=5", false, Arg.Any<CancellationToken>())
+            .ReturnValue(Task.FromResult(new EventWriteResult("series-1", AttendeeNotifications.NotSent)));
+
+        var factExp = new IProviderServiceFactoryCreateExpectations();
+        factExp.Setups.GetProvider("google").ReturnValue(provExp.Instance());
+
+        var tool = new CreateEventTool(regExp.Instance(), factExp.Instance(),
+            NullLogger<CreateEventTool>.Instance);
+
+        var result = await tool.CreateEvent("Standup", Start, End, "acc-1",
+            recurrence: "FREQ=DAILY;COUNT=5", notifyAttendees: false);
+        var doc = JsonDocument.Parse(result);
+
+        Assert.AreEqual("series-1", doc.RootElement.GetProperty("eventId").GetString());
+        Assert.AreEqual("not sent", doc.RootElement.GetProperty("notifications").GetString());
+
+        regExp.Verify();
+        factExp.Verify();
+        provExp.Verify();
+    }
+
+    [TestMethod]
+    public async Task CreateEvent_InvalidRecurrence_IsRefusedBeforeAnyLookup()
+    {
+        var regExp = new IAccountRegistryCreateExpectations();
+        var factExp = new IProviderServiceFactoryCreateExpectations();
+        var tool = new CreateEventTool(regExp.Instance(), factExp.Instance(),
+            NullLogger<CreateEventTool>.Instance);
+
+        var ex = await Assert.ThrowsExactlyAsync<McpException>(
+            () => tool.CreateEvent("Standup", Start, End, "acc-1", recurrence: "every monday"));
+
+        StringAssert.Contains(ex.Message, "Invalid recurrence");
+        regExp.Verify();
+        factExp.Verify();
     }
 
     [TestMethod]
@@ -75,8 +125,8 @@ public class CreateEventToolTests
         var provExp = new IProviderServiceCreateExpectations();
         provExp.Setups.CreateEventAsync(
             "acc-1", Arg.Any<string?>(), "Meeting", Arg.Any<DateTime>(), Arg.Any<DateTime>(),
-            Arg.Any<string?>(), Arg.Any<List<string>?>(), Arg.Any<string?>(), Arg.Any<string?>(), false, Arg.Any<CancellationToken>())
-            .ReturnValue(Task.FromResult("ev-id"));
+            Arg.Any<string?>(), Arg.Any<List<string>?>(), Arg.Any<string?>(), Arg.Any<string?>(), false, Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .ReturnValue(Task.FromResult(new EventWriteResult("ev-id", AttendeeNotifications.Sent)));
 
         var factExp = new IProviderServiceFactoryCreateExpectations();
         factExp.Setups.GetProvider("microsoft365").ReturnValue(provExp.Instance());
@@ -125,8 +175,8 @@ public class CreateEventToolTests
         var provExp = new IProviderServiceCreateExpectations();
         provExp.Setups.CreateEventAsync(
             "acc-1", Arg.Any<string?>(), "Offsite", new DateTime(2026, 10, 1), new DateTime(2026, 10, expectedEndDay),
-            Arg.Any<string?>(), Arg.Any<List<string>?>(), Arg.Any<string?>(), "America/Chicago", true, Arg.Any<CancellationToken>())
-            .ReturnValue(Task.FromResult("all-day-id"));
+            Arg.Any<string?>(), Arg.Any<List<string>?>(), Arg.Any<string?>(), "America/Chicago", true, Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .ReturnValue(Task.FromResult(new EventWriteResult("all-day-id", AttendeeNotifications.Sent)));
 
         var factExp = new IProviderServiceFactoryCreateExpectations();
         factExp.Setups.GetProvider("google").ReturnValue(provExp.Instance());

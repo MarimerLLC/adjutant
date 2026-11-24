@@ -12,7 +12,10 @@ given account.
   supported.
 - **Calendar**: events, create/update/delete/respond, and attendee free/busy.
   Only the mailbox's default calendar is exposed: omit `calendarId` (or pass
-  `primary`); any other calendarId is refused.
+  `primary`); any other calendarId is refused. Attendees are emailed on
+  create/update unless `notifyAttendees=false`. `recurrence` is limited to
+  what Exchange can store (yearly rules need `INTERVAL=1`); pass `timeZone`
+  so the series keeps its local time across daylight-saving changes.
 - **Email**: list/search/details, send, delete, mark read/unread, move.
   Meeting invitations, responses and cancellations are listed as mail.
   Attachment metadata is available, but attachment bytes and outbound
@@ -41,7 +44,11 @@ given account.
   bigger files, Graph supports an upload-session protocol that this
   server does not currently use — large attachments will fail.
 - **Recurring events**: returned as expanded occurrences in
-  `get_calendar_events`; not directly creatable through this server.
+  `get_calendar_events`. `create_event`/`update_event` take a `recurrence`
+  RRULE, limited to what Graph can store (see the calendar skill).
+- **Attendee notifications**: Graph always emails attendees when the
+  organizer creates or changes a meeting; `notifyAttendees=false` cannot
+  stop it.
 - **Default calendar** = the user's primary calendar in Outlook.
 
 ## Outlook.com / Hotmail (`outlook.com`)
@@ -69,6 +76,9 @@ given account.
 - **Attachments**: 25 MB upper limit on the Gmail side.
 - **Contacts**: People API; phone/email types may be normalized
   differently than Graph.
+- **Calendar writes**: attendees are emailed on create/update unless
+  `notifyAttendees=false`. Any valid RRULE is accepted for `recurrence`;
+  replacing a rule keeps the series' skipped (EXDATE) and added dates.
 
 ## IMAP + SMTP (`imap`)
 
@@ -109,6 +119,9 @@ given account.
   its own eventId. `delete_event` with an occurrence id removes only that
   occurrence. `update_event` and `respond_to_event` act on the whole
   series, so they reject an occurrence id; the error names the series id.
+  Any valid RRULE is accepted for `recurrence`. CalDAV has no client-side
+  invitation sending: whether attendees hear about a change depends on the
+  server.
 - **Quirks**: Reminders/VTODO are not supported; iCloud upgraded
   Reminders are not exposed over CalDAV. `respond_to_event` updates the
   local ATTENDEE `PARTSTAT` when the event object is editable (no full

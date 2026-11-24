@@ -357,14 +357,16 @@ public sealed class ExchangeEwsProviderService : IExchangeProviderService
         return item is null ? null : MapCalendarItem(item, accountId, true);
     }
 
-    public async Task<string> CreateEventAsync(string accountId, string? calendarId, string subject, DateTime start, DateTime end,
+    public async Task<EventWriteResult> CreateEventAsync(string accountId, string? calendarId, string subject, DateTime start, DateTime end,
         string? location = null, List<string>? attendees = null, string? body = null, string? timeZone = null,
-        bool isAllDay = false, CancellationToken cancellationToken = default)
+        bool isAllDay = false, string? recurrence = null, bool notifyAttendees = true, CancellationToken cancellationToken = default)
     {
         RequireDefaultCalendar(calendarId);
+        var change = RecurrenceRule.Parse(recurrence);
         var tz = TimeZoneHelper.TryGetTimeZone(timeZone) ?? TimeZoneInfo.Utc;
         // Children must follow the EWS schema sequence: Subject and Body (from ItemType), then
-        // Start, End, IsAllDayEvent, Location, RequiredAttendees (from CalendarItemType).
+        // Start, End, IsAllDayEvent, Location, RequiredAttendees, Recurrence, StartTimeZone,
+        // EndTimeZone (from CalendarItemType).
         var item = new XElement(T + "CalendarItem", new XElement(T + "Subject", subject));
         if (!string.IsNullOrWhiteSpace(body)) item.Add(new XElement(T + "Body", new XAttribute("BodyType", "HTML"), body));
         item.Add(
@@ -374,35 +376,116 @@ public sealed class ExchangeEwsProviderService : IExchangeProviderService
         if (!string.IsNullOrWhiteSpace(location)) item.Add(new XElement(T + "Location", location));
         var attendeeSet = BuildAttendees(attendees);
         if (attendeeSet is not null) item.Add(attendeeSet);
+        if (change is { IsClear: false })
+        {
+            item.Add(RecurrenceRule.ToEws(RecurrenceRule.ToSpec(change.Pattern!, start, timeZone, "Exchange"), T));
+            // Anchor the series to the local zone, or the meeting moves by an hour across DST.
+            if (WindowsZoneId(timeZone) is { } zoneId)
+                item.Add(new XElement(T + "StartTimeZone", new XAttribute("Id", zoneId)),
+                    new XElement(T + "EndTimeZone", new XAttribute("Id", zoneId)));
+        }
 
-        var create = new XElement(M + "CreateItem", new XAttribute("MessageDisposition", "Send"), new XAttribute("SendMeetingInvitations", "SendToAllAndSaveCopy"),
+        var create = new XElement(M + "CreateItem", new XAttribute("MessageDisposition", "Send"),
+            new XAttribute("SendMeetingInvitations", notifyAttendees ? "SendToAllAndSaveCopy" : "SendToNone"),
             new XElement(M + "SavedItemFolderId", new XElement(T + "DistinguishedFolderId", new XAttribute("Id", DefaultCalendarId))),
             new XElement(M + "Items", item));
         var doc = await SendAsync(accountId, create, cancellationToken);
-        return doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "ItemId")?.Attribute("Id")?.Value
+        var id = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "ItemId")?.Attribute("Id")?.Value
             ?? throw new ProviderOperationException("EWS did not return the created calendar item id.");
+        return new EventWriteResult(id, AttendeeNotifications.For(notifyAttendees));
     }
 
-    public async Task UpdateEventAsync(string accountId, string calendarId, string eventId, string? subject = null,
+    public async Task<EventWriteResult> UpdateEventAsync(string accountId, string calendarId, string eventId, string? subject = null,
         DateTime? start = null, DateTime? end = null, string? location = null, List<string>? attendees = null,
-        string? timeZone = null, bool? isAllDay = null, CancellationToken cancellationToken = default)
+        string? timeZone = null, bool? isAllDay = null, string? body = null, string? recurrence = null,
+        bool notifyAttendees = true, CancellationToken cancellationToken = default)
     {
-        var changeKey = await GetChangeKeyAsync(accountId, eventId, cancellationToken);
+        var change = RecurrenceRule.Parse(recurrence);
         var tz = TimeZoneHelper.TryGetTimeZone(timeZone) ?? TimeZoneInfo.Utc;
+
+        // A recurrence change goes to the series master, which an occurrence id has to be resolved to.
+        var target = change is null
+            ? new EwsItemRef(eventId, await GetChangeKeyAsync(accountId, eventId, cancellationToken), null)
+            : await GetRecurrenceTargetAsync(accountId, eventId, cancellationToken);
+
         var updates = new List<XElement>();
         if (subject is not null) updates.Add(CalendarSetField("item:Subject", new XElement(T + "Subject", subject)));
+        if (body is not null) updates.Add(CalendarSetField("item:Body", new XElement(T + "Body", new XAttribute("BodyType", "HTML"), body)));
         if (start.HasValue) updates.Add(CalendarSetField("calendar:Start", new XElement(T + "Start", FormatEventTime(start.Value, tz, isAllDay == true))));
         if (end.HasValue) updates.Add(CalendarSetField("calendar:End", new XElement(T + "End", FormatEventTime(end.Value, tz, isAllDay == true))));
         if (location is not null) updates.Add(CalendarSetField("calendar:Location", new XElement(T + "Location", location)));
         if (isAllDay.HasValue) updates.Add(CalendarSetField("calendar:IsAllDayEvent", new XElement(T + "IsAllDayEvent", isAllDay.Value ? "true" : "false")));
         if (attendees is not null) updates.Add(CalendarSetField("calendar:RequiredAttendees", new XElement(T + "RequiredAttendees", attendees.Where(x => !string.IsNullOrWhiteSpace(x)).Select(Attendee))));
-        if (updates.Count == 0) return;
-        var id = new XElement(T + "ItemId", new XAttribute("Id", eventId));
-        if (!string.IsNullOrEmpty(changeKey)) id.SetAttributeValue("ChangeKey", changeKey);
+        if (change is { IsClear: true })
+        {
+            updates.Add(new XElement(T + "DeleteItemField", Field("calendar:Recurrence")));
+        }
+        else if (change is not null)
+        {
+            var seriesStart = start ?? LocalStart(target, tz)
+                ?? throw new ProviderOperationException("Couldn't read the event's start to anchor the recurrence; pass start and end with it.");
+            updates.Add(CalendarSetField("calendar:Recurrence",
+                RecurrenceRule.ToEws(RecurrenceRule.ToSpec(change.Pattern!, seriesStart, timeZone, "Exchange"), T)));
+            if (WindowsZoneId(timeZone) is { } zoneId)
+            {
+                updates.Add(CalendarSetField("calendar:StartTimeZone", new XElement(T + "StartTimeZone", new XAttribute("Id", zoneId))));
+                updates.Add(CalendarSetField("calendar:EndTimeZone", new XElement(T + "EndTimeZone", new XAttribute("Id", zoneId))));
+            }
+        }
+        if (updates.Count == 0) return new EventWriteResult(target.Id, AttendeeNotifications.NotSent);
+        var id = new XElement(T + "ItemId", new XAttribute("Id", target.Id));
+        if (!string.IsNullOrEmpty(target.ChangeKey)) id.SetAttributeValue("ChangeKey", target.ChangeKey);
         var operation = new XElement(M + "UpdateItem", new XAttribute("ConflictResolution", "AlwaysOverwrite"),
-            new XAttribute("SendMeetingInvitationsOrCancellations", "SendToAllAndSaveCopy"),
+            new XAttribute("SendMeetingInvitationsOrCancellations", notifyAttendees ? "SendToAllAndSaveCopy" : "SendToNone"),
             new XElement(M + "ItemChanges", new XElement(T + "ItemChange", id, new XElement(T + "Updates", updates))));
         await SendAsync(accountId, operation, cancellationToken);
+        return new EventWriteResult(target.Id, AttendeeNotifications.For(notifyAttendees));
+    }
+
+    /// <summary>A calendar item to update, with its start (UTC) when it was read.</summary>
+    private sealed record EwsItemRef(string Id, string? ChangeKey, DateTime? StartUtc);
+
+    /// <summary>
+    /// Resolves <paramref name="eventId"/> to the item that carries the recurrence: itself, or
+    /// for an occurrence or exception of a series, the series master.
+    /// </summary>
+    private async Task<EwsItemRef> GetRecurrenceTargetAsync(string accountId, string eventId, CancellationToken ct)
+    {
+        XElement Shape() => new(M + "ItemShape", new XElement(T + "BaseShape", "IdOnly"),
+            new XElement(T + "AdditionalProperties", Field("calendar:CalendarItemType"), Field("calendar:Start")));
+
+        async Task<XElement> GetAsync(XElement itemId)
+        {
+            var doc = await SendAsync(accountId, new XElement(M + "GetItem", Shape(), new XElement(M + "ItemIds", itemId)), ct);
+            return doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "CalendarItem")
+                ?? throw new ProviderOperationException("EWS did not return the calendar item.");
+        }
+
+        var item = await GetAsync(new XElement(T + "ItemId", new XAttribute("Id", eventId)));
+        var type = Child(item, "CalendarItemType");
+        if (type is "Occurrence" or "Exception")
+            item = await GetAsync(new XElement(T + "RecurringMasterItemId", new XAttribute("OccurrenceId", eventId)));
+
+        var itemIdElement = item.Elements().FirstOrDefault(e => e.Name.LocalName == "ItemId");
+        return new EwsItemRef(
+            itemIdElement?.Attribute("Id")?.Value ?? eventId,
+            itemIdElement?.Attribute("ChangeKey")?.Value,
+            ParseNullableDate(Child(item, "Start")));
+    }
+
+    /// <summary>The item's start as local wall time in <paramref name="zone"/>.</summary>
+    private static DateTime? LocalStart(EwsItemRef item, TimeZoneInfo zone) =>
+        item.StartUtc is { } utc ? TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), zone) : null;
+
+    /// <summary>The Windows time zone id EWS expects, from an IANA or Windows name.</summary>
+    internal static string? WindowsZoneId(string? timeZone)
+    {
+        var zone = TimeZoneHelper.TryGetTimeZone(timeZone);
+        if (zone is null)
+            return null;
+        if (!zone.HasIanaId)
+            return zone.Id;
+        return TimeZoneInfo.TryConvertIanaIdToWindowsId(zone.Id, out var windowsId) ? windowsId : null;
     }
 
     public async Task DeleteEventAsync(string accountId, string calendarId, string eventId, CancellationToken cancellationToken = default)

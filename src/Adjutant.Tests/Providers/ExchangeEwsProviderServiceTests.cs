@@ -121,6 +121,83 @@ public class ExchangeEwsProviderServiceTests
     }
 
     [TestMethod]
+    public async Task UpdateEvent_SendsBodyAndRecurrenceAnchoredToTheLocalStart()
+    {
+        using var ews = new Ews();
+        // 15:00Z is 09:00 in Chicago.
+        ews.Items["A"] = "<t:CalendarItemType>Single</t:CalendarItemType><t:Start>2026-12-01T15:00:00Z</t:Start>";
+
+        var result = await ews.Provider().UpdateEventAsync("ex", "primary", "A", body: "<p>Agenda</p>",
+            recurrence: "FREQ=WEEKLY;BYDAY=TU;COUNT=4", timeZone: "America/Chicago");
+
+        CollectionAssert.AreEqual(new[] { "GetItem", "UpdateItem" }, ews.Operations.ToArray());
+        var update = ews.Requests.Last().Descendants(M + "UpdateItem").Single();
+        Assert.AreEqual("SendToAllAndSaveCopy", (string?)update.Attribute("SendMeetingInvitationsOrCancellations"));
+        var fields = update.Descendants(T + "SetItemField").Select(f => (string?)f.Element(T + "FieldURI")!.Attribute("FieldURI")).ToList();
+        CollectionAssert.IsSubsetOf(new[] { "item:Body", "calendar:Recurrence", "calendar:StartTimeZone", "calendar:EndTimeZone" }, fields);
+        Assert.AreEqual("Central Standard Time", (string?)update.Descendants(T + "StartTimeZone").Single().Attribute("Id"));
+        var range = update.Descendants(T + "NumberedRecurrence").Single();
+        Assert.AreEqual("2026-12-01", range.Element(T + "StartDate")!.Value);
+        Assert.AreEqual("Tuesday", update.Descendants(T + "WeeklyRecurrence").Single().Element(T + "DaysOfWeek")!.Value);
+        Assert.AreEqual(new EventWriteResult("A", AttendeeNotifications.Sent), result);
+    }
+
+    [TestMethod]
+    public async Task UpdateEvent_RecurrenceChangeOnAnOccurrenceGoesToTheSeriesMaster()
+    {
+        using var ews = new Ews();
+        ews.Items["OCC"] = "<t:CalendarItemType>Occurrence</t:CalendarItemType><t:Start>2026-12-08T15:00:00Z</t:Start>";
+        ews.Items["MASTER"] = "<t:CalendarItemType>RecurringMaster</t:CalendarItemType><t:Start>2026-12-01T15:00:00Z</t:Start>";
+        ews.Masters["OCC"] = "MASTER";
+
+        var result = await ews.Provider().UpdateEventAsync("ex", "primary", "OCC", recurrence: "FREQ=DAILY", timeZone: "UTC");
+
+        CollectionAssert.AreEqual(new[] { "GetItem", "GetItem", "UpdateItem" }, ews.Operations.ToArray());
+        Assert.AreEqual("OCC", (string?)ews.Requests[1].Descendants(T + "RecurringMasterItemId").Single().Attribute("OccurrenceId"));
+        var itemId = ews.Requests.Last().Descendants(T + "ItemChange").Single().Element(T + "ItemId")!;
+        Assert.AreEqual("MASTER", (string?)itemId.Attribute("Id"));
+        Assert.AreEqual("ck", (string?)itemId.Attribute("ChangeKey"));
+        Assert.AreEqual("2026-12-01", ews.Requests.Last().Descendants(T + "StartDate").Single().Value);
+        Assert.AreEqual("MASTER", result.EventId);
+    }
+
+    [TestMethod]
+    public async Task UpdateEvent_ClearsRecurrenceWithoutNotifying()
+    {
+        using var ews = new Ews();
+        ews.Items["A"] = "<t:CalendarItemType>RecurringMaster</t:CalendarItemType><t:Start>2026-12-01T15:00:00Z</t:Start>";
+
+        var result = await ews.Provider().UpdateEventAsync("ex", "primary", "A", recurrence: "none", notifyAttendees: false);
+
+        var update = ews.Requests.Last().Descendants(M + "UpdateItem").Single();
+        Assert.AreEqual("SendToNone", (string?)update.Attribute("SendMeetingInvitationsOrCancellations"));
+        Assert.AreEqual("calendar:Recurrence",
+            (string?)update.Descendants(T + "DeleteItemField").Single().Element(T + "FieldURI")!.Attribute("FieldURI"));
+        Assert.IsFalse(update.Descendants(T + "Recurrence").Any());
+        Assert.AreEqual(AttendeeNotifications.NotSent, result.Notifications);
+    }
+
+    [TestMethod]
+    public async Task CreateEvent_RecurrenceAndZoneFollowSchemaOrder()
+    {
+        using var ews = new Ews();
+        var result = await ews.Provider().CreateEventAsync("ex", null, "Standup", new DateTime(2026, 12, 1, 9, 0, 0),
+            new DateTime(2026, 12, 1, 9, 15, 0), null, ["al@example.com"], null, "Europe/London",
+            recurrence: "FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR", notifyAttendees: false);
+
+        var create = ews.Requests.Single().Descendants(M + "CreateItem").Single();
+        Assert.AreEqual("SendToNone", (string?)create.Attribute("SendMeetingInvitations"));
+        var item = create.Descendants(T + "CalendarItem").Single();
+        CollectionAssert.AreEqual(
+            new[] { "Subject", "Start", "End", "IsAllDayEvent", "RequiredAttendees", "Recurrence", "StartTimeZone", "EndTimeZone" },
+            item.Elements().Select(e => e.Name.LocalName).ToArray());
+        Assert.AreEqual("GMT Standard Time", (string?)item.Element(T + "StartTimeZone")!.Attribute("Id"));
+        Assert.AreEqual("Monday Tuesday Wednesday Thursday Friday",
+            item.Descendants(T + "WeeklyRecurrence").Single().Element(T + "DaysOfWeek")!.Value);
+        Assert.AreEqual(new EventWriteResult("NEW", AttendeeNotifications.NotSent), result);
+    }
+
+    [TestMethod]
     [DataRow("accept", "AcceptItem")]
     [DataRow("tentativelyAccepted", "TentativelyAcceptItem")]
     [DataRow("decline", "DeclineItem")]
@@ -461,6 +538,8 @@ public class ExchangeEwsProviderServiceTests
     {
         public readonly List<AccountInfo> Accounts = [Exchange("ex")];
         public readonly Dictionary<string, string> Items = new();
+        /// <summary>Series master id by occurrence id, for GetItem by RecurringMasterItemId.</summary>
+        public readonly Dictionary<string, string> Masters = new();
         public readonly List<XDocument> Requests = [];
         /// <summary>Response bodies by operation name, replacing the canned ones below.</summary>
         public readonly Dictionary<string, string> Responses = new();
@@ -488,7 +567,8 @@ public class ExchangeEwsProviderServiceTests
                     </m:FindItemResponseMessage></m:ResponseMessages></m:FindItemResponse>
                     """,
                 "GetItem" => $"""
-                    <m:GetItemResponse><m:ResponseMessages>{string.Concat(operation.Descendants(T + "ItemId").Select(i => (string)i.Attribute("Id")!).Select(id =>
+                    <m:GetItemResponse><m:ResponseMessages>{string.Concat(operation.Descendants(T + "ItemId").Select(i => (string)i.Attribute("Id")!)
+                        .Concat(operation.Descendants(T + "RecurringMasterItemId").Select(m => Masters[(string)m.Attribute("OccurrenceId")!])).Select(id =>
                         $"<m:GetItemResponseMessage ResponseClass=\"Success\"><m:ResponseCode>NoError</m:ResponseCode><m:Items><t:CalendarItem><t:ItemId Id=\"{id}\" ChangeKey=\"ck\"/>{Items.GetValueOrDefault(id, "")}</t:CalendarItem></m:Items></m:GetItemResponseMessage>"))}</m:ResponseMessages></m:GetItemResponse>
                     """,
                 "CreateItem" => """

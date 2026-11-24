@@ -19,6 +19,41 @@ internal static class ToolGuard
     }
 
     /// <summary>
+    /// Checks a <c>recurrence</c> argument before any provider call, so a bad RRULE is an input
+    /// error that names the problem.
+    /// </summary>
+    public static void RequireValidRecurrence(string? recurrence)
+    {
+        try
+        {
+            Providers.RecurrenceRule.Parse(recurrence);
+        }
+        catch (ProviderOperationException ex)
+        {
+            throw new McpException(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Strips a CDATA wrapper from content. LLMs sometimes wrap HTML content in XML CDATA
+    /// sections, which are not valid HTML.
+    /// </summary>
+    public static string? StripCdataWrapper(string? content)
+    {
+        if (string.IsNullOrEmpty(content))
+            return content;
+
+        var trimmed = content.Trim();
+        if (trimmed.StartsWith("<![CDATA[", StringComparison.OrdinalIgnoreCase) &&
+            trimmed.EndsWith("]]>", StringComparison.Ordinal))
+        {
+            return trimmed[9..^3]; // Remove "<![CDATA[" (9 chars) and "]]>" (3 chars)
+        }
+
+        return content;
+    }
+
+    /// <summary>
     /// Resolves an explicitly named account. A disabled account is refused like a missing one:
     /// the registry still returns it (the admin console needs it), but no tool may use it.
     /// </summary>

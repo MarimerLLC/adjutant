@@ -477,18 +477,20 @@ public class JsonCalendarProviderService : IJsonCalendarProviderService
 
     #region Calendar Write Operations (Not Supported)
 
-    public Task<string> CreateEventAsync(
+    public Task<EventWriteResult> CreateEventAsync(
         string accountId, string? calendarId, string subject,
         DateTime start, DateTime end, string? location = null,
         List<string>? attendees = null, string? body = null,
-        string? timeZone = null, bool isAllDay = false, CancellationToken cancellationToken = default)
+        string? timeZone = null, bool isAllDay = false, string? recurrence = null, bool notifyAttendees = true,
+        CancellationToken cancellationToken = default)
         => throw new NotSupportedException("JSON calendar provider is read-only.");
 
-    public Task UpdateEventAsync(
+    public Task<EventWriteResult> UpdateEventAsync(
         string accountId, string calendarId, string eventId,
         string? subject = null, DateTime? start = null, DateTime? end = null,
         string? location = null, List<string>? attendees = null,
-        string? timeZone = null, bool? isAllDay = null, CancellationToken cancellationToken = default)
+        string? timeZone = null, bool? isAllDay = null, string? body = null, string? recurrence = null,
+        bool notifyAttendees = true, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("JSON calendar provider is read-only.");
 
     public Task DeleteEventAsync(

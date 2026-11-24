@@ -239,7 +239,7 @@ public sealed class DavProviderService : IDavProviderService
                 occurrence.Value.Occurrence, cfg.Username);
     }
 
-    public async Task<string> CreateEventAsync(
+    public async Task<EventWriteResult> CreateEventAsync(
         string accountId,
         string? calendarId,
         string subject,
@@ -250,8 +250,11 @@ public sealed class DavProviderService : IDavProviderService
         string? body = null,
         string? timeZone = null,
         bool isAllDay = false,
+        string? recurrence = null,
+        bool notifyAttendees = true,
         CancellationToken cancellationToken = default)
     {
+        var change = RecurrenceRule.Parse(recurrence);
         var cfg = await ResolveConfigAsync(accountId);
         EnsureCalendar(cfg);
 
@@ -271,7 +274,7 @@ public sealed class DavProviderService : IDavProviderService
         var calHref = DavResourceId.Decode(calendar.Id);
         var uid = Guid.NewGuid().ToString();
         var objectHref = new Uri(calHref, $"{uid}.ics");
-        var ics = IcalMapper.BuildNewEventIcs(uid, subject, start, end, location, attendees, body, timeZone, isAllDay);
+        var ics = IcalMapper.BuildNewEventIcs(uid, subject, start, end, location, attendees, body, timeZone, isAllDay, change);
         var entry = EntryUri(cfg, DavServiceKind.CalDav);
 
         var put = await _http.PutAsync(
@@ -280,10 +283,11 @@ public sealed class DavProviderService : IDavProviderService
         EnsureHttpSuccess(put, "create event");
 
         _logger.LogInformation("Created CalDAV event {Href} on account {AccountId}", objectHref, accountId);
-        return DavResourceId.Encode(objectHref);
+        // CalDAV has no client-side send; servers with implicit scheduling notify by themselves.
+        return new EventWriteResult(DavResourceId.Encode(objectHref), AttendeeNotifications.ServerDependent);
     }
 
-    public async Task UpdateEventAsync(
+    public async Task<EventWriteResult> UpdateEventAsync(
         string accountId,
         string calendarId,
         string eventId,
@@ -294,8 +298,12 @@ public sealed class DavProviderService : IDavProviderService
         List<string>? attendees = null,
         string? timeZone = null,
         bool? isAllDay = null,
+        string? body = null,
+        string? recurrence = null,
+        bool notifyAttendees = true,
         CancellationToken cancellationToken = default)
     {
+        var change = RecurrenceRule.Parse(recurrence);
         var cfg = await ResolveConfigAsync(accountId);
         EnsureCalendar(cfg);
 
@@ -306,11 +314,12 @@ public sealed class DavProviderService : IDavProviderService
             DavServiceKind.CalDav, entry, cancellationToken);
         EnsureHttpSuccess(get, "get event for update");
 
-        var updated = IcalMapper.ApplyUpdates(get.Body, subject, start, end, location, attendees, timeZone, isAllDay);
+        var updated = IcalMapper.ApplyUpdates(get.Body, subject, start, end, location, attendees, timeZone, isAllDay, body, change);
         var put = await _http.PutAsync(
             target.Href, cfg.Username, cfg.Password, updated, "text/calendar; charset=utf-8",
             cfg.Preset, DavServiceKind.CalDav, entry, ifMatch: get.Etag, cancellationToken);
         EnsureHttpSuccess(put, "update event");
+        return new EventWriteResult(eventId, AttendeeNotifications.ServerDependent);
     }
 
     public async Task DeleteEventAsync(

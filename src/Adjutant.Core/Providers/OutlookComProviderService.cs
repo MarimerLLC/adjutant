@@ -908,7 +908,7 @@ public class OutlookComProviderService : IOutlookComProviderService
             : $"Every {pattern.Interval} weeks on {daysStr}";
     }
 
-    public async Task<string> CreateEventAsync(
+    public async Task<EventWriteResult> CreateEventAsync(
         string accountId,
         string? calendarId,
         string subject,
@@ -919,74 +919,19 @@ public class OutlookComProviderService : IOutlookComProviderService
         string? body = null,
         string? timeZone = null,
         bool isAllDay = false,
+        string? recurrence = null,
+        bool notifyAttendees = true,
         CancellationToken cancellationToken = default)
     {
         var token = await GetAccessTokenAsync(accountId, cancellationToken);
 
         try
         {
-            var authProvider = new BearerTokenAuthenticationProvider(token);
-            var graphClient = new GraphServiceClient(authProvider);
-
-            var newEvent = new Event
-            {
-                Subject = subject,
-                IsAllDay = isAllDay,
-                Start = EventTimeBuilder.ToGraph(start, timeZone, isAllDay),
-                End = EventTimeBuilder.ToGraph(end, timeZone, isAllDay)
-            };
-
-            if (!string.IsNullOrEmpty(location))
-            {
-                newEvent.Location = new Location
-                {
-                    DisplayName = location
-                };
-            }
-
-            if (!string.IsNullOrEmpty(body))
-            {
-                newEvent.Body = new ItemBody
-                {
-                    ContentType = BodyType.Html,
-                    Content = body
-                };
-            }
-
-            if (attendees != null && attendees.Count > 0)
-            {
-                newEvent.Attendees = attendees
-                    .Select(email => new Attendee
-                    {
-                        EmailAddress = new Microsoft.Graph.Models.EmailAddress
-                        {
-                            Address = email.Trim()
-                        },
-                        Type = AttendeeType.Required
-                    })
-                    .ToList();
-            }
-
-            Event? createdEvent;
-            if (CalendarIdAliases.IsDefaultCalendar(calendarId))
-            {
-                createdEvent = await graphClient.Me.Calendar.Events.PostAsync(newEvent, cancellationToken: cancellationToken);
-            }
-            else
-            {
-                try
-                {
-                    createdEvent = await graphClient.Me.Calendars[calendarId].Events.PostAsync(newEvent, cancellationToken: cancellationToken);
-                }
-                catch (ODataError ex) when (CalendarIdAliases.TranslateCreateFailure(calendarId, ex) is { } unknownCalendar)
-                {
-                    throw unknownCalendar;
-                }
-            }
-
-            var eventId = createdEvent?.Id ?? string.Empty;
-            _logger.LogInformation("Created event {EventId} in Outlook.com account {AccountId}", eventId, accountId);
-            return eventId;
+            var graphClient = new GraphServiceClient(new BearerTokenAuthenticationProvider(token));
+            var result = await GraphEventWriter.CreateAsync(graphClient, calendarId, subject, start, end,
+                location, attendees, body, timeZone, isAllDay, recurrence, cancellationToken);
+            _logger.LogInformation("Created event {EventId} in Outlook.com account {AccountId}", result.EventId, accountId);
+            return result;
         }
         catch (Exception ex)
         {
@@ -995,7 +940,7 @@ public class OutlookComProviderService : IOutlookComProviderService
         }
     }
 
-    public async Task UpdateEventAsync(
+    public async Task<EventWriteResult> UpdateEventAsync(
         string accountId,
         string calendarId,
         string eventId,
@@ -1006,62 +951,20 @@ public class OutlookComProviderService : IOutlookComProviderService
         List<string>? attendees = null,
         string? timeZone = null,
         bool? isAllDay = null,
+        string? body = null,
+        string? recurrence = null,
+        bool notifyAttendees = true,
         CancellationToken cancellationToken = default)
     {
         var token = await GetAccessTokenAsync(accountId, cancellationToken);
 
         try
         {
-            var authProvider = new BearerTokenAuthenticationProvider(token);
-            var graphClient = new GraphServiceClient(authProvider);
-
-            var eventUpdate = new Event();
-
-            if (!string.IsNullOrEmpty(subject))
-            {
-                eventUpdate.Subject = subject;
-            }
-
-            if (isAllDay.HasValue)
-            {
-                eventUpdate.IsAllDay = isAllDay.Value;
-            }
-
-            if (start.HasValue)
-            {
-                eventUpdate.Start = EventTimeBuilder.ToGraph(start.Value, timeZone, isAllDay == true);
-            }
-
-            if (end.HasValue)
-            {
-                eventUpdate.End = EventTimeBuilder.ToGraph(end.Value, timeZone, isAllDay == true);
-            }
-
-            if (!string.IsNullOrEmpty(location))
-            {
-                eventUpdate.Location = new Location
-                {
-                    DisplayName = location
-                };
-            }
-
-            if (attendees != null)
-            {
-                eventUpdate.Attendees = attendees
-                    .Select(email => new Attendee
-                    {
-                        EmailAddress = new Microsoft.Graph.Models.EmailAddress
-                        {
-                            Address = email.Trim()
-                        },
-                        Type = AttendeeType.Required
-                    })
-                    .ToList();
-            }
-
-            await graphClient.Me.Events[eventId].PatchAsync(eventUpdate, cancellationToken: cancellationToken);
-            
-            _logger.LogInformation("Updated event {EventId} in Outlook.com account {AccountId}", eventId, accountId);
+            var graphClient = new GraphServiceClient(new BearerTokenAuthenticationProvider(token));
+            var result = await GraphEventWriter.UpdateAsync(graphClient, eventId, subject, start, end,
+                location, attendees, timeZone, isAllDay, body, recurrence, cancellationToken);
+            _logger.LogInformation("Updated event {EventId} in Outlook.com account {AccountId}", result.EventId, accountId);
+            return result;
         }
         catch (Exception ex)
         {

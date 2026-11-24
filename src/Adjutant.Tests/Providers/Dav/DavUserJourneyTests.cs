@@ -24,7 +24,7 @@ public class DavUserJourneyTests
         var calendars = (await provider.ListCalendarsAsync("a")).ToList();
         var calendar = calendars.Single(c => c.CanEdit);
         var start = new DateTime(2026, 9, 27);
-        var id = await provider.CreateEventAsync("a", null, "Trip", start, start.AddDays(2), attendees: ["a@example.com"], isAllDay: true);
+        var id = (await provider.CreateEventAsync("a", null, "Trip", start, start.AddDays(2), attendees: ["a@example.com"], isAllDay: true)).EventId;
         Assert.IsTrue(DavResourceId.Decode(id).AbsolutePath.StartsWith("/a/cal/rw/"));
         Assert.IsTrue((await provider.GetCalendarEventDetailsAsync("a", calendar.Id, id))!.IsAllDay);
         await provider.UpdateEventAsync("a", calendar.Id, id, subject: "Updated", start: start.AddDays(1), end: start.AddDays(3));
@@ -155,7 +155,7 @@ public class DavUserJourneyTests
     {
         using var server = new Server { Shared = true };
         var provider = server.Provider();
-        var id = await provider.CreateEventAsync("a", null, "Shared", DateTime.UtcNow, DateTime.UtcNow.AddHours(1));
+        var id = (await provider.CreateEventAsync("a", null, "Shared", DateTime.UtcNow, DateTime.UtcNow.AddHours(1))).EventId;
         var calendar = (await provider.ListCalendarsAsync("a")).Single(c => c.CanEdit);
         Assert.IsNotNull(await provider.GetCalendarEventDetailsAsync("a", calendar.Id, id));
         Assert.IsTrue(DavResourceId.Decode(id).AbsolutePath.StartsWith("/shared/cal/"));
@@ -306,7 +306,7 @@ public class DavUserJourneyTests
         var rw = (await provider.ListCalendarsAsync("a")).Single(c => c.CanEdit);
         var start = new DateTime(2026, 10, 5, 15, 0, 0);
 
-        var id = await provider.CreateEventAsync("a", "primary", "Sync", start, start.AddHours(1));
+        var id = (await provider.CreateEventAsync("a", "primary", "Sync", start, start.AddHours(1))).EventId;
         Assert.IsTrue(DavResourceId.Decode(id).AbsolutePath.StartsWith("/a/cal/rw/"));
         Assert.AreEqual(1, (await provider.GetCalendarEventsAsync("a", "Primary", start.AddDays(-1), start.AddDays(1))).Count());
         Assert.AreEqual(rw.Id, (await provider.GetCalendarEventDetailsAsync("a", "primary", id))!.CalendarId);

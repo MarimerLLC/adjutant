@@ -16,10 +16,10 @@ public sealed class CreateEventTool(
     IProviderServiceFactory providerFactory,
     ILogger<CreateEventTool> logger)
 {
-    [McpServerTool, Description("Create a calendar event. Always pass the timeZone parameter using the user's local IANA timezone (e.g. `America/Chicago`, `America/New_York`, `Europe/London`) so events are created at the correct local time. Requires explicit account selection or smart routing.")]
+    [McpServerTool, Description("Create a calendar event, optionally recurring. Always pass the timeZone parameter using the user's local IANA timezone (e.g. `America/Chicago`, `America/New_York`, `Europe/London`) so events are created at the correct local time. Requires explicit account selection or smart routing. The result's `notifications` says whether attendees were sent invitations.")]
     public async Task<string> CreateEvent(
         [Description("Event subject/title")] string subject,
-        [Description("Event start date and time (ISO 8601 format). For an all-day event, a date (yyyy-MM-dd).")] DateTime start,
+        [Description("Event start date and time (ISO 8601 format). For an all-day event, a date (yyyy-MM-dd). For a recurring event, the first occurrence.")] DateTime start,
         [Description("Event end date and time (ISO 8601 format). For an all-day event, the exclusive end date (yyyy-MM-dd): a one-day event on 2026-10-01 ends 2026-10-02.")] DateTime end,
         [Description("Account ID to create the event in. Omitting uses the first configured account — provide explicitly to target the correct account. Obtain from list_accounts.")] string? accountId = null,
         [Description("Calendar ID to create the event in. Omit (or pass 'primary') for the default calendar; otherwise obtain from list_calendars.")] string? calendarId = null,
@@ -27,13 +27,15 @@ public sealed class CreateEventTool(
         [Description("List of attendee email addresses")] List<string>? attendees = null,
         [Description("Event description/body")] string? body = null,
         [Description("IANA timezone name for the event (e.g. `America/Chicago`, `America/New_York`, `Europe/London`). Required to create events at the correct local time.")] string? timeZone = null,
-        [Description("True for an all-day event. start/end are then dates (yyyy-MM-dd, end exclusive) and any time of day is ignored.")] bool isAllDay = false)
+        [Description("True for an all-day event. start/end are then dates (yyyy-MM-dd, end exclusive) and any time of day is ignored.")] bool isAllDay = false,
+        [Description("Makes the event recurring: an RFC 5545 RRULE such as `FREQ=WEEKLY;BYDAY=MO,WE;COUNT=10`, `FREQ=MONTHLY;BYDAY=2TU;UNTIL=20271231T235959Z` or `FREQ=DAILY;INTERVAL=2`. Omit for a single event.")] string? recurrence = null,
+        [Description("Send invitations to the attendees (default true). Set false to add the event without emailing them. Microsoft 365/Outlook.com always send invitations.")] bool notifyAttendees = true)
     {
-        // Strip CDATA wrappers if present (LLMs sometimes wrap content in XML CDATA)
-        body = StripCdataWrapper(body);
-        
-        logger.LogInformation("Creating event: subject={Subject}, start={Start}, end={End}, isAllDay={IsAllDay}, accountId={AccountId}",
-            subject, start, end, isAllDay, accountId);
+        body = ToolGuard.StripCdataWrapper(body);
+        ToolGuard.RequireValidRecurrence(recurrence);
+
+        logger.LogInformation("Creating event: subject={Subject}, start={Start}, end={End}, isAllDay={IsAllDay}, recurring={Recurring}, accountId={AccountId}",
+            subject, start, end, isAllDay, !string.IsNullOrWhiteSpace(recurrence), accountId);
 
         if (isAllDay)
             (start, end) = AllDayRange.Normalize(start, end);
@@ -62,15 +64,17 @@ public sealed class CreateEventTool(
         {
             // Create event
             var provider = providerFactory.GetProvider(account.Provider);
-            var eventId = await provider.CreateEventAsync(
-                account.Id, calendarId, subject, start, end, location, attendees, body, timeZone, isAllDay, CancellationToken.None);
+            var created = await provider.CreateEventAsync(
+                account.Id, calendarId, subject, start, end, location, attendees, body, timeZone, isAllDay,
+                recurrence, notifyAttendees, CancellationToken.None);
 
             var result = new
             {
                 success = true,
-                eventId = eventId,
+                eventId = created.EventId,
                 accountUsed = account.Id,
-                calendarUsed = calendarId ?? "default"
+                calendarUsed = calendarId ?? "default",
+                notifications = created.Notifications
             };
 
             logger.LogInformation("Created event in account {AccountId}", account.Id);
@@ -85,26 +89,5 @@ public sealed class CreateEventTool(
             logger.LogError(ex, "Error in create_event tool");
             throw ToolGuard.Failure("create event", ex);
         }
-    }
-
-    /// <summary>
-    /// Strips CDATA wrappers from content if present.
-    /// LLMs sometimes wrap HTML content in XML CDATA sections which are not valid HTML.
-    /// </summary>
-    private static string? StripCdataWrapper(string? content)
-    {
-        if (string.IsNullOrEmpty(content))
-            return content;
-
-        var trimmed = content.Trim();
-        
-        // Check for CDATA wrapper: <![CDATA[...]]>
-        if (trimmed.StartsWith("<![CDATA[", StringComparison.OrdinalIgnoreCase) &&
-            trimmed.EndsWith("]]>", StringComparison.Ordinal))
-        {
-            return trimmed[9..^3]; // Remove "<![CDATA[" (9 chars) and "]]>" (3 chars)
-        }
-
-        return content;
     }
 }

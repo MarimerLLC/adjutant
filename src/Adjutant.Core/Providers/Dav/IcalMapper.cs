@@ -359,7 +359,8 @@ public static partial class IcalMapper
         IEnumerable<string>? attendees,
         string? body,
         string? timeZone,
-        bool isAllDay = false)
+        bool isAllDay = false,
+        RecurrenceChange? recurrence = null)
     {
         var calendar = new IcalCalendar();
         var evt = new IcsCalendarEvent
@@ -401,6 +402,9 @@ public static partial class IcalMapper
             }
         }
 
+        if (recurrence is { IsClear: false })
+            evt.RecurrenceRules = [new RecurrencePattern(recurrence.Rule)];
+
         calendar.Events.Add(evt);
         AddMissingTimeZones(calendar, evt);
         return Serialize(calendar);
@@ -414,7 +418,9 @@ public static partial class IcalMapper
         string? location,
         List<string>? attendees,
         string? timeZone,
-        bool? isAllDay = null)
+        bool? isAllDay = null,
+        string? body = null,
+        RecurrenceChange? recurrence = null)
     {
         var calendar = IcalCalendar.Load(existingIcs)
             ?? throw new InvalidOperationException("Failed to parse existing calendar data.");
@@ -425,6 +431,23 @@ public static partial class IcalMapper
             evt.Summary = subject;
         if (location is not null)
             evt.Location = location;
+        if (body is not null)
+            evt.Description = body;
+        if (recurrence is { IsClear: true })
+        {
+            // A single event again: drop the rule, its added and skipped dates, and the
+            // overridden occurrences stored alongside the series.
+            evt.RecurrenceRules = [];
+            evt.RecurrenceDates = [];
+            evt.ExceptionDates = [];
+            foreach (var overridden in calendar.Events.Where(e => e.RecurrenceId is not null).ToList())
+                calendar.Events.Remove(overridden);
+        }
+        else if (recurrence is not null)
+        {
+            // Skipped (EXDATE) and added (RDATE) dates stay, as on Google.
+            evt.RecurrenceRules = [new RecurrencePattern(recurrence.Rule)];
+        }
         var allDay = isAllDay ?? evt.IsAllDay;
         if (start is not null || isAllDay is not null)
         {
@@ -441,15 +464,20 @@ public static partial class IcalMapper
         evt.IsAllDay = allDay;
         if (attendees is not null)
         {
+            // Attendees already on the event keep their entry, and so their PARTSTAT reply.
+            var existing = evt.Attendees.ToList();
             evt.Attendees.Clear();
-            foreach (var email in attendees.Where(a => !string.IsNullOrWhiteSpace(a)))
+            foreach (var email in attendees.Where(a => !string.IsNullOrWhiteSpace(a))
+                         .Select(a => a.Trim()).Distinct(StringComparer.OrdinalIgnoreCase))
             {
-                evt.Attendees.Add(new Attendee($"mailto:{email.Trim()}")
-                {
-                    Role = "REQ-PARTICIPANT",
-                    ParticipationStatus = "NEEDS-ACTION",
-                    Rsvp = true
-                });
+                evt.Attendees.Add(
+                    existing.FirstOrDefault(a => string.Equals(ExtractMailto(a.Value), email, StringComparison.OrdinalIgnoreCase))
+                    ?? new Attendee($"mailto:{email}")
+                    {
+                        Role = "REQ-PARTICIPANT",
+                        ParticipationStatus = "NEEDS-ACTION",
+                        Rsvp = true
+                    });
             }
         }
 

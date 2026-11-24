@@ -529,6 +529,10 @@ Create calendar event in specific calendar (requires explicit account selection 
 - `location` (optional): Event location
 - `attendees` (optional): Array of attendee emails
 - `body` (optional): Event description
+- `timeZone` (optional): IANA time zone for `start`/`end`
+- `isAllDay` (optional): All-day event; `start`/`end` are dates, end exclusive
+- `recurrence` (optional): RFC 5545 RRULE, e.g. `FREQ=WEEKLY;BYDAY=MO,WE;COUNT=10`
+- `notifyAttendees` (optional, default `true`): Send invitations (see [Attendee notifications](#attendee-notifications))
 
 **Returns**:
 ```json
@@ -536,12 +540,13 @@ Create calendar event in specific calendar (requires explicit account selection 
   "success": true,
   "eventId": "evt-456",
   "accountUsed": "work-account",
-  "calendarUsed": "cal-123"
+  "calendarUsed": "cal-123",
+  "notifications": "sent"
 }
 ```
 
 #### `update_event`
-Update existing calendar event.
+Update existing calendar event. Only the parameters passed are changed.
 
 **Parameters**:
 - `accountId`: Specific account ID (required)
@@ -550,16 +555,48 @@ Update existing calendar event.
 - `subject` (optional): New subject
 - `start` (optional): New start time
 - `end` (optional): New end time
-- `location` (optional): New location
-- `attendees` (optional): New attendee list
+- `location` (optional): New location; `""` clears it
+- `attendees` (optional): New attendee list (replaces it; attendees already invited keep their response)
+- `timeZone` (optional): IANA time zone for `start`/`end` and the recurrence
+- `isAllDay` (optional): Convert to all-day (`true`) or timed (`false`); needs `start` and `end`
+- `body` (optional): New description (HTML allowed); `""` clears it
+- `recurrence` (optional): RRULE to set or replace the recurrence, or `none` to make it a single event.
+  Always applies to the whole series: given an occurrence id, the update goes to its series and the
+  result's `eventId` is the series id. Other changes made through an occurrence id change only that
+  occurrence (Microsoft 365, Outlook.com, Google)
+- `notifyAttendees` (optional, default `true`): Send the update to attendees
 
 **Returns**:
 ```json
 {
   "success": true,
-  "eventId": "evt-456"
+  "eventId": "evt-456",
+  "accountUsed": "work-account",
+  "calendarUsed": "cal-123",
+  "notifications": "sent"
 }
 ```
+
+#### Attendee notifications
+
+`create_event` and `update_event` report what attendees were told in `notifications`:
+
+| Provider | `notifyAttendees=true` | `notifyAttendees=false` |
+|----------|------------------------|-------------------------|
+| Google | Emails attendees (`sent`) | No email (`not sent`) |
+| Exchange (EWS) | Emails attendees (`sent`) | No email (`not sent`) |
+| Microsoft 365 / Outlook.com | Always emailed; Graph has no switch | Still emailed (the result says so) |
+| CalDAV | Up to the server's scheduling support | Same |
+
+#### Recurrence rules
+
+Google and CalDAV take any valid RRULE. Microsoft 365, Outlook.com and Exchange store recurrence as
+structured patterns, so only rules they can express are accepted: daily (`FREQ=DAILY`, or
+`FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR` for weekdays), weekly on given days, monthly on a day
+(`BYMONTHDAY=15`) or an nth weekday (`BYDAY=2TU`, `BYDAY=-1FR`, or `BYDAY=MO,TU,WE,TH,FR;BYSETPOS=-1`),
+and yearly on a month day or an nth weekday of a month. End with `COUNT=n` or `UNTIL=...`, or leave it
+open. Anything else (`BYHOUR`, several `BYMONTHDAY` values, a fifth-week day, ...) is refused with a
+message rather than approximated. Exchange also refuses yearly rules with `INTERVAL` above 1.
 
 #### `delete_event`
 Delete calendar event (requires organizer permissions or edit access).

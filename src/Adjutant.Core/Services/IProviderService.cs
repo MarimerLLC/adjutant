@@ -105,7 +105,9 @@ public interface IProviderService
         string eventId,
         CancellationToken cancellationToken = default);
     
-    Task<string> CreateEventAsync(
+    /// <param name="recurrence">An RRULE (see <c>RecurrenceRule.Parse</c>); null for a single event.</param>
+    /// <param name="notifyAttendees">Send invitations to attendees where the provider allows the choice.</param>
+    Task<EventWriteResult> CreateEventAsync(
         string accountId,
         string? calendarId,
         string subject,
@@ -116,9 +118,20 @@ public interface IProviderService
         string? body = null,
         string? timeZone = null,
         bool isAllDay = false,
+        string? recurrence = null,
+        bool notifyAttendees = true,
         CancellationToken cancellationToken = default);
-    
-    Task UpdateEventAsync(
+
+    /// <summary>
+    /// Changes the given fields; null leaves a field as it is. An empty <paramref name="location"/>
+    /// or <paramref name="body"/> clears it.
+    /// </summary>
+    /// <param name="recurrence">
+    /// An RRULE to set or replace the recurrence, <c>"none"</c> to remove it, null to leave it.
+    /// A recurrence change always applies to the whole series.
+    /// </param>
+    /// <param name="notifyAttendees">Send updates to attendees where the provider allows the choice.</param>
+    Task<EventWriteResult> UpdateEventAsync(
         string accountId,
         string calendarId,
         string eventId,
@@ -129,6 +142,9 @@ public interface IProviderService
         List<string>? attendees = null,
         string? timeZone = null,
         bool? isAllDay = null,
+        string? body = null,
+        string? recurrence = null,
+        bool notifyAttendees = true,
         CancellationToken cancellationToken = default);
     
     Task DeleteEventAsync(

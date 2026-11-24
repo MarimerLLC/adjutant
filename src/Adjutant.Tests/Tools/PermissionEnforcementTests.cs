@@ -246,8 +246,8 @@ public class PermissionEnforcementTests
         var provExp = new IProviderServiceCreateExpectations();
         provExp.Setups.CreateEventAsync("acc-writable", Arg.Any<string?>(), Arg.Any<string>(),
                 Arg.Any<DateTime>(), Arg.Any<DateTime>(), Arg.Any<string?>(), Arg.Any<List<string>?>(),
-                Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
-            .ReturnValue(Task.FromResult("evt-1"));
+                Arg.Any<string?>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .ReturnValue(Task.FromResult(new EventWriteResult("evt-1", AttendeeNotifications.Sent)));
 
         var factExp = new IProviderServiceFactoryCreateExpectations();
         factExp.Setups.GetProvider("google").ReturnValue(provExp.Instance());
