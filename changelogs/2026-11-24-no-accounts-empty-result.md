@@ -60,6 +60,13 @@ Related fixes in the same fan-outs:
   `search_contacts` and `get_contextual_email_summary` started from every configured account,
   disabled ones included, while the calendar fan-outs used only enabled accounts. All seven now
   use enabled accounts.
+- **A disabled account can't be used by any tool.** Disabling an account only removed it from the
+  calendar fan-outs. Every tool that takes an explicit `accountId` still used it, and smart
+  routing could pick it, so `send_email` would send from a disabled account. Now
+  `ToolGuard.RequireAccountAsync` refuses it (`Account '<id>' is disabled. ...`), the `bulk_*`
+  tools fail just that item, and smart routing in `send_email`, `create_event`, `delete_event`,
+  `respond_to_event` and `create_contact` considers enabled accounts only. Those tools' existing
+  "No enabled account permits ..." errors are now accurate.
 - **`list_accounts` lists enabled accounts only by default.** It returned disabled accounts too,
   although `Skills/accounts.md` says it returns only enabled ones, and none of the fan-outs query
   them. A new `includeDisabled` parameter (default `false`) lists them as well, and every entry
@@ -96,6 +103,11 @@ New tests:
 - `list_calendars` / `get_calendar_events` with only an IMAP account return the permission warning.
 - `list_accounts` against a real `AccountRegistry` doesn't list a disabled account, and lists it
   with `enabled: false` when `includeDisabled` is true.
+- `DisabledAccountTests`, also against a real `AccountRegistry`: naming a disabled account is
+  refused (`get_email_details`, `get_emails`, `get_calendar_events`, `send_email`), smart routing
+  in `send_email` and `create_event` skips it, `send_email` with only a disabled account is
+  refused, and a `bulk_delete_emails` item on it fails while the other item succeeds. All eight
+  failed before the fix; `send_email` was sending from the disabled account.
 - `get_calendar_events` with only a `calendarId` on an empty server.
 
 ## Docs

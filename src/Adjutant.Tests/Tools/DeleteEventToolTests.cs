@@ -64,8 +64,7 @@ public class DeleteEventToolTests
         var account = TestData.CreateAccount(id: "acc-1", provider: "microsoft365");
 
         var regExp = new IAccountRegistryCreateExpectations();
-        regExp.Setups.GetAllAccountsAsync()
-            .ReturnValue(Task.FromResult<IEnumerable<AccountInfo>>([account]));
+        regExp.Setups.GetEnabledAccounts().ReturnValue([account]);
 
         var provExp = new IProviderServiceCreateExpectations();
         provExp.Setups.DeleteEventAsync("acc-1", "primary", "ev-1", Arg.Any<CancellationToken>())

@@ -18,13 +18,26 @@ internal static class ToolGuard
             throw new McpException($"{paramName} is required");
     }
 
+    /// <summary>
+    /// Resolves an explicitly named account. A disabled account is refused like a missing one:
+    /// the registry still returns it (the admin console needs it), but no tool may use it.
+    /// </summary>
     public static async Task<AccountInfo> RequireAccountAsync(IAccountRegistry registry, string accountId)
     {
         var account = await registry.GetAccountAsync(accountId);
         if (account == null)
             throw new McpException($"Account '{accountId}' not found");
+        if (!account.Enabled)
+            throw new McpException(DescribeDisabledAccount(account.Id));
         return account;
     }
+
+    /// <summary>
+    /// Why a disabled account can't be used, for a tool error or a bulk tool's per-item <c>error</c>.
+    /// </summary>
+    public static string DescribeDisabledAccount(string accountId) =>
+        $"Account '{accountId}' is disabled. Re-enable it in the admin console (HTTP server) or the " +
+        "configuration file, or use another account from list_accounts.";
 
     /// <summary>
     /// Resolves an explicitly requested account and verifies it permits

@@ -82,14 +82,14 @@ public sealed class SendEmailTool(
         {
             Models.AccountInfo? selected = null;
 
-            // Smart routing only ever considers accounts permitted to send, so a domain match
-            // on a read-only account falls through to the next candidate instead of failing.
+            // Smart routing only ever considers enabled accounts permitted to send, so a domain
+            // match on a disabled or read-only account falls through to the next candidate.
             var matchingAccounts = new List<Models.AccountInfo>();
             var recipientDomain = to[0].Split('@').LastOrDefault();
             if (!string.IsNullOrEmpty(recipientDomain))
             {
                 matchingAccounts = ToolGuard.FilterByPermission(
-                    accountRegistry.GetAccountsByDomain(recipientDomain),
+                    accountRegistry.GetAccountsByDomain(recipientDomain).Where(a => a.Enabled),
                     Models.AccountPermission.EmailSend, logger, "send_email");
 
                 if (matchingAccounts.Count == 1)
@@ -110,9 +110,8 @@ public sealed class SendEmailTool(
             // If still no account, use default (first that permits sending)
             if (selected == null)
             {
-                var allAccounts = await accountRegistry.GetAllAccountsAsync();
                 selected = ToolGuard.FilterByPermission(
-                    allAccounts, Models.AccountPermission.EmailSend, logger, "send_email")
+                    accountRegistry.GetEnabledAccounts(), Models.AccountPermission.EmailSend, logger, "send_email")
                     .FirstOrDefault();
             }
 

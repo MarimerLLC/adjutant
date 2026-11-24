@@ -144,8 +144,7 @@ public class PermissionEnforcementTests
 
         var regExp = new IAccountRegistryCreateExpectations();
         regExp.Setups.GetAccountsByDomain("example.com").ReturnValue([readOnlyMatch]);
-        regExp.Setups.GetAllAccountsAsync()
-            .ReturnValue(Task.FromResult<IEnumerable<AccountInfo>>([readOnlyMatch, sender]));
+        regExp.Setups.GetEnabledAccounts().ReturnValue([readOnlyMatch, sender]);
 
         var provExp = new IProviderServiceCreateExpectations();
         provExp.Setups.SendEmailAsync("acc-sender", Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(),
@@ -242,8 +241,7 @@ public class PermissionEnforcementTests
         var writable = TestData.CreateAccount(id: "acc-writable", provider: "google");
 
         var regExp = new IAccountRegistryCreateExpectations();
-        regExp.Setups.GetAllAccountsAsync()
-            .ReturnValue(Task.FromResult<IEnumerable<AccountInfo>>([readOnly, writable]));
+        regExp.Setups.GetEnabledAccounts().ReturnValue([readOnly, writable]);
 
         var provExp = new IProviderServiceCreateExpectations();
         provExp.Setups.CreateEventAsync("acc-writable", Arg.Any<string?>(), Arg.Any<string>(),

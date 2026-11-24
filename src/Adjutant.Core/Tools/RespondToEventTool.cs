@@ -48,9 +48,9 @@ public sealed class RespondToEventTool(
         }
         else
         {
-            // Fall back to the first account that actually permits the write, so a
+            // Fall back to the first enabled account that actually permits the write, so a
             // scoped-out account at the head of the list doesn't hijack the operation.
-            var accounts = await accountRegistry.GetAllAccountsAsync();
+            var accounts = accountRegistry.GetEnabledAccounts();
             var candidates = ToolGuard.FilterByPermission(
                 accounts, Models.AccountPermission.CalendarWrite, logger, "respond_to_event");
             var first = candidates.FirstOrDefault();

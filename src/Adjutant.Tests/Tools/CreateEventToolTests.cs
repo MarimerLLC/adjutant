@@ -70,8 +70,7 @@ public class CreateEventToolTests
         var account = TestData.CreateAccount(id: "acc-1", provider: "microsoft365");
 
         var regExp = new IAccountRegistryCreateExpectations();
-        regExp.Setups.GetAllAccountsAsync()
-            .ReturnValue(Task.FromResult<IEnumerable<AccountInfo>>([account]));
+        regExp.Setups.GetEnabledAccounts().ReturnValue([account]);
 
         var provExp = new IProviderServiceCreateExpectations();
         provExp.Setups.CreateEventAsync(
@@ -100,8 +99,7 @@ public class CreateEventToolTests
     public async Task CreateEvent_NoAccounts_ThrowsMcpException()
     {
         var regExp = new IAccountRegistryCreateExpectations();
-        regExp.Setups.GetAllAccountsAsync()
-            .ReturnValue(Task.FromResult<IEnumerable<AccountInfo>>([]));
+        regExp.Setups.GetEnabledAccounts().ReturnValue([]);
 
         var factExp = new IProviderServiceFactoryCreateExpectations();
         var tool = new CreateEventTool(regExp.Instance(), factExp.Instance(),

@@ -68,8 +68,7 @@ public class SendEmailToolTests
         var regExp = new IAccountRegistryCreateExpectations();
         regExp.Setups.GetAccountsByDomain("unknown.com")
             .ReturnValue([]);
-        regExp.Setups.GetAllAccountsAsync()
-            .ReturnValue(Task.FromResult<IEnumerable<AccountInfo>>([]));
+        regExp.Setups.GetEnabledAccounts().ReturnValue([]);
 
         var factExp = new IProviderServiceFactoryCreateExpectations();
         var tool = new SendEmailTool(regExp.Instance(), factExp.Instance(),

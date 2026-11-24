@@ -57,6 +57,11 @@ public sealed class BulkMoveEmailsTool(
                         return new BulkResultItem(item.EmailId, item.AccountId, false, $"Account '{item.AccountId}' not found");
                     }
 
+                    if (!account.Enabled)
+                    {
+                        return new BulkResultItem(item.EmailId, item.AccountId, false, ToolGuard.DescribeDisabledAccount(item.AccountId));
+                    }
+
                     // Per-item rather than up-front, so one scoped-out account doesn't fail the batch.
                     if (!AccountCapabilities.IsAllowed(account, AccountPermission.EmailRead))
                     {

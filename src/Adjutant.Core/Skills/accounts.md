@@ -118,7 +118,7 @@ which will fail at the provider layer with a less helpful message.
 `send_email` accepts a missing `accountId`. When omitted:
 
 1. Extract domain from the first recipient (`to[0]` after `@`).
-2. Look up accounts whose `domains` array contains that domain.
+2. Look up enabled accounts whose `domains` array contains that domain.
 3. If exactly one matches, send from it.
 4. If multiple match, the first one is used (deterministic but arbitrary).
 5. If none match, the first configured account is used as fallback.
@@ -139,9 +139,11 @@ the result.
 
 ## Disabled accounts
 
-Accounts can be marked disabled via the admin UI. `list_accounts`
-returns only enabled accounts, and the fan-outs never query disabled
-ones. If a previously-known `accountId` stops working, re-call
+Accounts can be marked disabled via the admin UI. A disabled account is
+switched off for every tool: `list_accounts` leaves it out, the fan-outs
+and smart routing never pick it, and naming it explicitly fails with
+`Account '<id>' is disabled. ...` (in a `bulk_*` tool, just that item
+fails). If a previously-known `accountId` stops working, re-call
 `list_accounts` to refresh.
 
 To find out whether an account the user expects is missing because it

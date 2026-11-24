@@ -78,7 +78,11 @@ Two behaviours differ by how the account was chosen:
   [No accounts configured](#no-accounts-configured)).
 
 Smart routing (`send_email`, `create_event`, `create_contact`, `delete_event`,
-`respond_to_event`) only ever selects accounts that permit the operation.
+`respond_to_event`) only ever selects enabled accounts that permit the operation.
+
+A **disabled** account can't be used by any tool. Naming it with `accountId` fails with
+`Account '<id>' is disabled. ...`; in a `bulk_*` tool only the items on that account fail. It is
+also left out of `list_accounts` (unless `includeDisabled` is true), every fan-out and smart routing.
 
 `bulk_*` tools check per item, so one scoped-out account fails only its own entries rather than
 the whole batch.
