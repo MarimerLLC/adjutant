@@ -20,8 +20,7 @@ public class CreateContactToolTests
         var account = TestData.CreateAccount(id: "acc-1", provider: "microsoft365");
 
         var regExp = new IAccountRegistryCreateExpectations();
-        regExp.Setups.GetAllAccountsAsync()
-            .ReturnValue(Task.FromResult<IEnumerable<AccountInfo>>([account]));
+        regExp.Setups.GetEnabledAccounts().ReturnValue([account]);
 
         var provExp = new IProviderServiceCreateExpectations();
         provExp.Setups.CreateContactAsync(
