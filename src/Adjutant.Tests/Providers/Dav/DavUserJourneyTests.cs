@@ -318,6 +318,52 @@ public class DavUserJourneyTests
     }
 
     [TestMethod]
+    public async Task ContactList_ServerIgnoringEmptyFilter_RetriesWithPropertyFilterAndRemembersIt()
+    {
+        using var server = new Server { IgnoreEmptyContactFilter = true };
+        var provider = server.Provider();
+        var id = await provider.CreateContactAsync("a", "Alice", emailAddresses: ["alice@example.com"]);
+        server.Reports.Clear();
+
+        Assert.AreEqual(id, (await provider.GetContactsAsync("a")).Single().Id);
+        var first = server.Reports.Where(r => r.Contains("addressbook-query")).ToList();
+        Assert.AreEqual(2, first.Count(r => !r.Contains("prop-filter")), "one plain query per book");
+        Assert.AreEqual(2, first.Count(r => r.Contains("prop-filter")), "one retry per book");
+
+        server.Reports.Clear();
+        Assert.AreEqual(id, (await provider.SearchContactsAsync("a", "alice")).Single().Id);
+        var second = server.Reports.Where(r => r.Contains("addressbook-query")).ToList();
+        Assert.AreEqual(2, second.Count, "goes straight to the property filter once learned");
+        Assert.IsTrue(second.All(r => r.Contains("prop-filter")));
+    }
+
+    [TestMethod]
+    public async Task ContactList_CompliantServer_NeverProbesEmptyBooksOnceContactsSeen()
+    {
+        using var server = new Server();
+        var provider = server.Provider();
+        await provider.CreateContactAsync("a", "Alice", emailAddresses: ["alice@example.com"]);
+        server.Reports.Clear();
+
+        Assert.AreEqual(1, (await provider.GetContactsAsync("a")).Count());
+        Assert.AreEqual(1, (await provider.GetContactsAsync("a")).Count());
+        var queries = server.Reports.Where(r => r.Contains("addressbook-query")).ToList();
+        Assert.AreEqual(4, queries.Count);
+        Assert.IsFalse(queries.Any(r => r.Contains("prop-filter")), "the empty ro/ book must not trigger a retry");
+    }
+
+    [TestMethod]
+    public async Task ContactList_EmptyBooksOnServerRejectingPropertyFilter_ReturnsEmptyInsteadOfThrowing()
+    {
+        using var server = new Server { RejectPropertyFilter = true };
+        var provider = server.Provider();
+
+        Assert.AreEqual(0, (await provider.GetContactsAsync("a")).Count());
+        Assert.AreEqual(0, (await provider.SearchContactsAsync("a", "anyone")).Count());
+        Assert.IsTrue(server.Reports.Any(r => r.Contains("prop-filter")));
+    }
+
+    [TestMethod]
     public async Task ContactListAndSearch_UseFilteredAddressbookQueryAndGroupedProperties()
     {
         using var server = new Server();
@@ -336,6 +382,8 @@ public class DavUserJourneyTests
     private sealed class Server : HttpMessageHandler, IHttpClientFactory, IAccountRegistry
     {
         public bool ReadOnly, Shared, Discover, FailWrites;
+        // CardDAV quirks: Synology-style empty multistatus for <c:filter/>, or a server that rejects prop-filter.
+        public bool IgnoreEmptyContactFilter, RejectPropertyFilter;
         public string Home = "/a/cal/";
         public AccountInfo Account = TestData.CreateAccount(id: "a", provider: "dav", providerConfig: new()
         {
@@ -375,6 +423,12 @@ public class DavUserJourneyTests
             {
                 var body = await request.Content!.ReadAsStringAsync(cancellationToken);
                 Reports.Add(body);
+                if (body.Contains("addressbook-query"))
+                {
+                    var propertyFiltered = body.Contains("prop-filter");
+                    if (propertyFiltered && RejectPropertyFilter) return new(HttpStatusCode.BadRequest);
+                    if (!propertyFiltered && IgnoreEmptyContactFilter) return Xml("");
+                }
                 var data = body.Contains("addressbook-query") ? "a:address-data" : "c:calendar-data";
                 return Xml(string.Concat(Resources.Where(r => r.Key.StartsWith(path, StringComparison.Ordinal)).Select(r =>
                     $"<d:response><d:href>{r.Key}</d:href><d:propstat><d:prop><d:getetag>\"v1\"</d:getetag><{data}><![CDATA[{r.Value}]]></{data}></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>")));
