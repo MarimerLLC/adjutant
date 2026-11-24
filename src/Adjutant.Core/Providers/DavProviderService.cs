@@ -390,14 +390,14 @@ public sealed class DavProviderService : IDavProviderService
         EnsureContacts(cfg);
 
         var entry = EntryUri(cfg, DavServiceKind.CardDav);
-        var href = await ValidateContactResourceAsync(cfg, contactId, cancellationToken);
+        var (href, book) = await ResolveContactResourceAsync(cfg, contactId, cancellationToken);
         var get = await _http.GetAsync(href, cfg.Username, cfg.Password, cfg.Preset,
             DavServiceKind.CardDav, entry, cancellationToken);
         if (get.StatusCode == HttpStatusCode.NotFound)
             return null;
         EnsureHttpSuccess(get, "get contact");
 
-        return VCardMapper.ToContact(get.Body, accountId, contactId, get.Etag);
+        return VCardMapper.ToContact(get.Body, accountId, contactId, get.Etag, AddressBookName(book));
     }
 
     public async Task<string> CreateContactAsync(
@@ -498,7 +498,8 @@ public sealed class DavProviderService : IDavProviderService
                     continue;
 
                 var contactId = DavResourceId.Encode(item.Href);
-                var contact = VCardMapper.ToContact(item.AddressData, accountId, contactId, item.Etag, book.DisplayName);
+                var contact = VCardMapper.ToContact(
+                    item.AddressData, accountId, contactId, item.Etag, AddressBookName(book));
                 if (query is null || ContactMatches(contact, query))
                     contacts.Add(contact);
             }
@@ -601,7 +602,16 @@ public sealed class DavProviderService : IDavProviderService
             $"To apply it to every occurrence, use the series eventId \"{DavResourceId.Encode(target.Href)}\".");
     }
 
-    private async Task<Uri> ValidateContactResourceAsync(DavAccountConfig cfg, string contactId, CancellationToken cancellationToken)
+    // Servers often return <d:displayname/> in a 404 propstat for an unnamed collection,
+    // which parses as "". Expose that as "no name" rather than an empty string.
+    private static string? AddressBookName(DavPropResponse book) =>
+        string.IsNullOrWhiteSpace(book.DisplayName) ? null : book.DisplayName.Trim();
+
+    private async Task<Uri> ValidateContactResourceAsync(DavAccountConfig cfg, string contactId, CancellationToken cancellationToken) =>
+        (await ResolveContactResourceAsync(cfg, contactId, cancellationToken)).Resource;
+
+    private async Task<(Uri Resource, DavPropResponse Book)> ResolveContactResourceAsync(
+        DavAccountConfig cfg, string contactId, CancellationToken cancellationToken)
     {
         Uri resource;
         try
@@ -615,9 +625,9 @@ public sealed class DavProviderService : IDavProviderService
         }
 
         var books = await ListAddressbooksAsync(cfg, cancellationToken);
-        if (!books.Any(b => IsCollectionChild(b.Href, resource)))
-            throw new ProviderOperationException("The contact is not in this account's address books.");
-        return resource;
+        var book = books.FirstOrDefault(b => IsCollectionChild(b.Href, resource))
+            ?? throw new ProviderOperationException("The contact is not in this account's address books.");
+        return (resource, book);
     }
 
     private static bool IsCollectionChild(Uri collection, Uri resource)

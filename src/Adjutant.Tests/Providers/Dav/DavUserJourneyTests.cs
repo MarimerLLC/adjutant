@@ -318,6 +318,22 @@ public class DavUserJourneyTests
     }
 
     [TestMethod]
+    public async Task ContactResults_CarryTheSourceAddressBookName()
+    {
+        using var server = new Server();
+        server.Names["/a/book/rw/"] = "Family";
+        var provider = server.Provider();
+        var id = await provider.CreateContactAsync("a", "Alice", emailAddresses: ["alice@example.com"]);
+        server.Resources["/a/book/ro/bob.vcf"] = "BEGIN:VCARD\r\nVERSION:3.0\r\nUID:bob\r\nFN:Bob\r\nEND:VCARD\r\n";
+
+        var contacts = (await provider.GetContactsAsync("a")).ToDictionary(c => c.DisplayName);
+        Assert.AreEqual("Family", contacts["Alice"].AddressBookName);
+        Assert.IsNull(contacts["Bob"].AddressBookName, "an unnamed book is null, not an empty string");
+        Assert.AreEqual("Family", (await provider.SearchContactsAsync("a", "alice")).Single().AddressBookName);
+        Assert.AreEqual("Family", (await provider.GetContactDetailsAsync("a", id))!.AddressBookName);
+    }
+
+    [TestMethod]
     public async Task ContactListAndSearch_UseFilteredAddressbookQueryAndGroupedProperties()
     {
         using var server = new Server();
@@ -344,6 +360,7 @@ public class DavUserJourneyTests
             ["calendarHomeSet"] = "https://dav.example/a/cal/", ["addressbookHomeSet"] = "https://dav.example/a/book/"
         });
         public Dictionary<string, string> Resources = new();
+        public Dictionary<string, string> Names = new(); // collection path -> DAV:displayname
         public List<string> RequestPaths = [], RequestMethods = [], Reports = [];
         public List<(string? ContentType, string? IfMatch)> Writes = [];
         public CaptureLogger Log = new();
@@ -394,7 +411,14 @@ public class DavUserJourneyTests
             }
             return new(HttpStatusCode.NotFound);
         }
-        private static string Collection(string path, bool book, bool write) => $"<d:response><d:href>{path}</d:href><d:propstat><d:prop><d:resourcetype><{(book ? "a:addressbook" : "c:calendar")}/></d:resourcetype><d:current-user-privilege-set><d:privilege><d:{(write ? "write" : "read")}/></d:privilege></d:current-user-privilege-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>";
+        private string Collection(string path, bool book, bool write)
+        {
+            // Named collections get a displayname; unnamed ones report it in a 404 propstat, as real servers do.
+            var named = Names.TryGetValue(path, out var name);
+            var displayName = named ? $"<d:displayname>{name}</d:displayname>" : string.Empty;
+            var missing = named ? string.Empty : "<d:propstat><d:prop><d:displayname/></d:prop><d:status>HTTP/1.1 404 Not Found</d:status></d:propstat>";
+            return $"<d:response><d:href>{path}</d:href>{missing}<d:propstat><d:prop>{displayName}<d:resourcetype><{(book ? "a:addressbook" : "c:calendar")}/></d:resourcetype><d:current-user-privilege-set><d:privilege><d:{(write ? "write" : "read")}/></d:privilege></d:current-user-privilege-set></d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>";
+        }
         private static HttpResponseMessage Xml(string body) => new(HttpStatusCode.MultiStatus) { Content = new StringContent($"<d:multistatus xmlns:d='DAV:' xmlns:c='urn:ietf:params:xml:ns:caldav' xmlns:a='urn:ietf:params:xml:ns:carddav'>{body}</d:multistatus>") };
         public Task<AccountInfo?> GetAccountAsync(string id) => Task.FromResult<AccountInfo?>(Account);
         public Task<IEnumerable<AccountInfo>> GetAllAccountsAsync() => Task.FromResult<IEnumerable<AccountInfo>>([Account]);
