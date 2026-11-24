@@ -60,6 +60,10 @@ Related fixes in the same fan-outs:
   `search_contacts` and `get_contextual_email_summary` started from every configured account,
   disabled ones included, while the calendar fan-outs used only enabled accounts. All seven now
   use enabled accounts.
+- **`list_accounts` lists enabled accounts only by default.** It returned disabled accounts too,
+  although `Skills/accounts.md` says it returns only enabled ones, and none of the fan-outs query
+  them. A new `includeDisabled` parameter (default `false`) lists them as well, and every entry
+  now carries `enabled`. The admin console's account list still shows every account.
 - **Calendar fan-outs say when every account is scoped out.** When enabled accounts exist but
   none permit reading calendars (e.g. an IMAP-only server, or calendar-read revoked),
   `list_calendars` and `get_calendar_events` used to return an empty list with no warning. They
@@ -90,6 +94,8 @@ New tests:
   account, including `get_calendar_events` with only a `calendarId`. Also a test that a disabled
   account beside an enabled one is never queried.
 - `list_calendars` / `get_calendar_events` with only an IMAP account return the permission warning.
+- `list_accounts` against a real `AccountRegistry` doesn't list a disabled account, and lists it
+  with `enabled: false` when `includeDisabled` is true.
 - `get_calendar_events` with only a `calendarId` on an empty server.
 
 ## Docs

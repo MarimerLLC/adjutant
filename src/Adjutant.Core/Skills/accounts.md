@@ -140,5 +140,11 @@ the result.
 ## Disabled accounts
 
 Accounts can be marked disabled via the admin UI. `list_accounts`
-returns only enabled accounts. If a previously-known `accountId` stops
-working, re-call `list_accounts` to refresh.
+returns only enabled accounts, and the fan-outs never query disabled
+ones. If a previously-known `accountId` stops working, re-call
+`list_accounts` to refresh.
+
+To find out whether an account the user expects is missing because it
+is disabled, call `list_accounts(includeDisabled=true)`: every entry
+carries `enabled`. Tell the user to re-enable it in the admin console
+rather than working around it.

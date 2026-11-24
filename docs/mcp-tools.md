@@ -9,9 +9,12 @@ Adjutant exposes tools through the Model Context Protocol (MCP) that AI assistan
 ### Account Management
 
 #### `list_accounts`
-Get list of all configured accounts across all providers, with what each one allows.
+Get list of all enabled accounts across all providers, with what each one allows. Disabled
+accounts are left out, matching the fan-out tools, which never query them.
 
-**Parameters**: None
+**Parameters**:
+- `includeDisabled` (default: false): Also list disabled accounts. Every entry carries `enabled`,
+  so the two can be told apart.
 
 **Returns**:
 ```json
@@ -22,6 +25,7 @@ Get list of all configured accounts across all providers, with what each one all
       "provider": "microsoft365",
       "displayName": "Work Account",
       "domains": ["example.com"],
+      "enabled": true,
       "capabilities": [
         { "name": "calendar", "readOnly": false },
         { "name": "email", "readOnly": true }

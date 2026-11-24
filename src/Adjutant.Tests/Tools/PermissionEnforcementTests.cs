@@ -294,8 +294,7 @@ public class PermissionEnforcementTests
             permissions: AccountPermissions.All.With(AccountPermission.EmailSend, false));
 
         var regExp = new IAccountRegistryCreateExpectations();
-        regExp.Setups.GetAllAccountsAsync()
-            .ReturnValue(Task.FromResult<IEnumerable<AccountInfo>>([account]));
+        regExp.Setups.GetEnabledAccounts().ReturnValue([account]);
 
         var tool = new ListAccountsTool(regExp.Instance(), NullLogger<ListAccountsTool>.Instance);
 

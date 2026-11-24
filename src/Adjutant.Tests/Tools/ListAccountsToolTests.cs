@@ -1,5 +1,7 @@
 using System.Text.Json;
+using Adjutant.Core.Configuration;
 using Adjutant.Core.Models;
+using Adjutant.Core.Providers;
 using Adjutant.Core.Services;
 using Adjutant.Core.Tools;
 using Adjutant.Tests.Helpers;
@@ -22,8 +24,7 @@ public class ListAccountsToolTests
         };
 
         var registryExpectations = new IAccountRegistryCreateExpectations();
-        registryExpectations.Setups.GetAllAccountsAsync()
-            .ReturnValue(Task.FromResult<IEnumerable<AccountInfo>>(accounts));
+        registryExpectations.Setups.GetEnabledAccounts().ReturnValue(accounts);
 
         var registry = registryExpectations.Instance();
         var tool = new ListAccountsTool(registry, NullLogger<ListAccountsTool>.Instance);
@@ -40,11 +41,58 @@ public class ListAccountsToolTests
     }
 
     [TestMethod]
+    public async Task ListAccounts_DisabledAccount_IsNotListed()
+    {
+        // Real registry: the enabled filter lives there, not in the tool.
+        using var registry = new AccountRegistry(
+            new TestOptionsMonitor<AdjutantConfiguration>(new AdjutantConfiguration
+            {
+                Accounts =
+                [
+                    TestData.CreateAccount(id: "acc-on", displayName: "On"),
+                    TestData.CreateAccount(id: "acc-off", displayName: "Off", enabled: false)
+                ]
+            }),
+            NullLogger<AccountRegistry>.Instance);
+        var tool = new ListAccountsTool(registry, NullLogger<ListAccountsTool>.Instance);
+
+        using var doc = JsonDocument.Parse(await tool.ListAccounts());
+        var accountsArray = doc.RootElement.GetProperty("accounts");
+
+        Assert.AreEqual(1, accountsArray.GetArrayLength());
+        Assert.AreEqual("acc-on", accountsArray[0].GetProperty("accountId").GetString());
+        Assert.IsTrue(accountsArray[0].GetProperty("enabled").GetBoolean());
+    }
+
+    [TestMethod]
+    public async Task ListAccounts_IncludeDisabled_ListsDisabledAccountMarkedAsSuch()
+    {
+        using var registry = new AccountRegistry(
+            new TestOptionsMonitor<AdjutantConfiguration>(new AdjutantConfiguration
+            {
+                Accounts =
+                [
+                    TestData.CreateAccount(id: "acc-on", displayName: "On"),
+                    TestData.CreateAccount(id: "acc-off", displayName: "Off", enabled: false)
+                ]
+            }),
+            NullLogger<AccountRegistry>.Instance);
+        var tool = new ListAccountsTool(registry, NullLogger<ListAccountsTool>.Instance);
+
+        using var doc = JsonDocument.Parse(await tool.ListAccounts(includeDisabled: true));
+        var byId = doc.RootElement.GetProperty("accounts").EnumerateArray()
+            .ToDictionary(a => a.GetProperty("accountId").GetString()!, a => a.GetProperty("enabled").GetBoolean());
+
+        Assert.AreEqual(2, byId.Count);
+        Assert.IsTrue(byId["acc-on"]);
+        Assert.IsFalse(byId["acc-off"]);
+    }
+
+    [TestMethod]
     public async Task ListAccounts_EmptyAccounts_ReturnsEmptyArray()
     {
         var registryExpectations = new IAccountRegistryCreateExpectations();
-        registryExpectations.Setups.GetAllAccountsAsync()
-            .ReturnValue(Task.FromResult<IEnumerable<AccountInfo>>([]));
+        registryExpectations.Setups.GetEnabledAccounts().ReturnValue([]);
 
         var registry = registryExpectations.Instance();
         var tool = new ListAccountsTool(registry, NullLogger<ListAccountsTool>.Instance);
@@ -62,7 +110,7 @@ public class ListAccountsToolTests
     public async Task ListAccounts_Exception_ThrowsGenericMcpException()
     {
         var registryExpectations = new IAccountRegistryCreateExpectations();
-        registryExpectations.Setups.GetAllAccountsAsync()
+        registryExpectations.Setups.GetEnabledAccounts()
             .Callback(() => throw new InvalidOperationException("Sensitive registry detail"));
 
         var registry = registryExpectations.Instance();

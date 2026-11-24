@@ -45,7 +45,7 @@ an account via the CLI, in the admin web UI, or directly in `appsettings.json`. 
 
 The server exposes these tools to AI assistants:
 
-- **list_accounts** — List all configured accounts, with each one's capabilities and permissions
+- **list_accounts** — List the enabled accounts, with each one's capabilities and permissions
 - **get_emails** / **search_emails** — Read and search email across accounts
 - **get_email_details** — Get full email content
 - **get_contextual_email_summary** — AI-powered topic clustering and persona analysis
