@@ -86,17 +86,30 @@ public static class DavXml
             """;
     }
 
-    public static string AddressbookQuery() =>
-        """
+    /// <summary>
+    /// Builds a CardDAV addressbook-query. The default empty filter matches every card
+    /// (RFC 6352 §10.5). <paramref name="requirePropertyFilter"/> swaps in an explicit
+    /// "has FN, N or UID" filter for servers (e.g. Synology Contacts) that return an
+    /// empty multistatus for an empty filter; matching any of the three keeps vCard 2.1
+    /// cards, which may omit FN.
+    /// </summary>
+    public static string AddressbookQuery(bool requirePropertyFilter = false)
+    {
+        var filter = requirePropertyFilter
+            ? """<c:filter test="anyof"><c:prop-filter name="FN"/><c:prop-filter name="N"/><c:prop-filter name="UID"/></c:filter>"""
+            : "<c:filter/>";
+
+        return $"""
         <?xml version="1.0" encoding="utf-8"?>
         <c:addressbook-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav">
           <d:prop>
             <d:getetag/>
             <c:address-data/>
           </d:prop>
-          <c:filter/>
+          {filter}
         </c:addressbook-query>
         """;
+    }
 
     public static IReadOnlyList<DavPropResponse> ParseMultiStatus(string xml, Uri baseUri)
     {
