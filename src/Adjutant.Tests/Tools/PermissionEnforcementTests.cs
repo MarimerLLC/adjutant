@@ -50,8 +50,7 @@ public class PermissionEnforcementTests
         var denied = Scoped("acc-denied", AccountPermission.CalendarRead);
 
         var regExp = new IAccountRegistryCreateExpectations();
-        regExp.Setups.GetAllAccountsAsync()
-            .ReturnValue(Task.FromResult<IEnumerable<AccountInfo>>([allowed, denied]));
+        regExp.Setups.GetEnabledAccounts().ReturnValue([allowed, denied]);
 
         var provExp = new IProviderServiceCreateExpectations();
         provExp.Setups.GetEmailsAsync("acc-allowed", Arg.Any<int>(), Arg.Any<bool>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
@@ -79,8 +78,7 @@ public class PermissionEnforcementTests
         var denied = Scoped("acc-denied", AccountPermission.CalendarRead);
 
         var regExp = new IAccountRegistryCreateExpectations();
-        regExp.Setups.GetAllAccountsAsync()
-            .ReturnValue(Task.FromResult<IEnumerable<AccountInfo>>([denied]));
+        regExp.Setups.GetEnabledAccounts().ReturnValue([denied]);
 
         var tool = new GetEmailsTool(regExp.Instance(),
             new IProviderServiceFactoryCreateExpectations().Instance(),

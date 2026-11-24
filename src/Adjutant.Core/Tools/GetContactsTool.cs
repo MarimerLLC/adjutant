@@ -30,12 +30,8 @@ public sealed class GetContactsTool(
         List<AccountInfo> validAccounts;
         if (string.IsNullOrEmpty(accountId))
         {
-            validAccounts = (await accountRegistry.GetAllAccountsAsync()).ToList();
-            if (validAccounts.Count == 0)
-            {
-                warnings.Add(ToolGuard.NoAccountsConfiguredWarning());
-            }
-            else
+            validAccounts = ToolGuard.GetFanOutAccounts(accountRegistry, warnings);
+            if (validAccounts.Count > 0)
             {
                 // Skip accounts without contact-read permission (and providers with no contacts
                 // at all) rather than fanning out into a NotSupportedException.

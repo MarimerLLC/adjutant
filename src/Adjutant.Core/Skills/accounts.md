@@ -75,21 +75,29 @@ The exceptions where omitting `accountId` is fine:
 - `get_emails`, `search_emails`, `list_calendars`, `get_calendar_events`,
   `get_contacts`, `search_contacts` — these fan out across all enabled
   accounts when `accountId` is omitted, which is often what you want.
-- `get_contextual_email_summary` — always fans out across all accounts.
+- `get_contextual_email_summary` — always fans out across all enabled
+  accounts.
+
+Disabled accounts are never part of a fan-out.
 
 The calendar fan-outs (`list_calendars`, `get_calendar_events`)
 automatically skip accounts that lack a `calendar` capability (e.g.
-email-only IMAP accounts), so those never produce errors or warnings.
-Targeting such an account explicitly via `accountId` returns no events
-plus an actionable warning.
+email-only IMAP accounts), so those don't produce errors or warnings
+while at least one account can be read. If that skips every account,
+the result is empty plus one warning, `No accounts permit reading
+calendars. ...`, rather than an error. Targeting such an account
+explicitly via `accountId` returns no events plus an actionable warning.
 
-If the server has no accounts at all, every fan-out (including
-`get_contextual_email_summary`) returns an empty result plus one
-`warnings` entry with no `accountId`:
+If the server has no enabled accounts at all, every fan-out (including
+`get_contextual_email_summary`, and `get_calendar_events` given only a
+`calendarId`) returns an empty result plus one `warnings` entry with no
+`accountId`:
 `{ "warning": "No enabled accounts are configured on this server. ..." }`.
-Tell the user to add an account in the admin console rather than
-reporting "no emails" or "no events". If accounts exist but none permit
-the operation, the tool still errors with `No accounts permit ...`.
+Tell the user to add an account (admin console on the HTTP server, or
+the CLI) rather than reporting "no emails" or "no events". If enabled
+accounts exist but none permit the operation, the email and contacts
+fan-outs error with `No accounts permit ...`; the calendar fan-outs
+return the warning above instead.
 
 ## Capability checking before write operations
 

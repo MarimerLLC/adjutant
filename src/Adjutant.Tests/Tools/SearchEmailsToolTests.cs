@@ -126,8 +126,7 @@ public class SearchEmailsToolTests
         var acc2 = TestData.CreateAccount(id: "acc-2", provider: "google");
 
         var regExp = new IAccountRegistryCreateExpectations();
-        regExp.Setups.GetAllAccountsAsync()
-            .ReturnValue(Task.FromResult<IEnumerable<AccountInfo>>([acc1, acc2]));
+        regExp.Setups.GetEnabledAccounts().ReturnValue([acc1, acc2]);
 
         var emails1 = new List<EmailMessage> { TestData.CreateEmail(id: "e1", accountId: "acc-1") };
         var emails2 = new List<EmailMessage> { TestData.CreateEmail(id: "e2", accountId: "acc-2") };
@@ -167,8 +166,7 @@ public class SearchEmailsToolTests
     public async Task SearchEmails_NoAccounts_ReturnsEmptyWithWarning()
     {
         var regExp = new IAccountRegistryCreateExpectations();
-        regExp.Setups.GetAllAccountsAsync()
-            .ReturnValue(Task.FromResult<IEnumerable<AccountInfo>>([]));
+        regExp.Setups.GetEnabledAccounts().ReturnValue([]);
 
         var factExp = new IProviderServiceFactoryCreateExpectations();
         var tool = new SearchEmailsTool(regExp.Instance(), factExp.Instance(),

@@ -19,8 +19,7 @@ public class ContactsFanOutTests
     public async Task GetContacts_NoAccounts_ReturnsEmptyWithWarning()
     {
         var regExp = new IAccountRegistryCreateExpectations();
-        regExp.Setups.GetAllAccountsAsync()
-            .ReturnValue(Task.FromResult<IEnumerable<AccountInfo>>([]));
+        regExp.Setups.GetEnabledAccounts().ReturnValue([]);
 
         var factExp = new IProviderServiceFactoryCreateExpectations();
         var tool = new GetContactsTool(regExp.Instance(), factExp.Instance(),
@@ -35,8 +34,7 @@ public class ContactsFanOutTests
     public async Task SearchContacts_NoAccounts_ReturnsEmptyWithWarning()
     {
         var regExp = new IAccountRegistryCreateExpectations();
-        regExp.Setups.GetAllAccountsAsync()
-            .ReturnValue(Task.FromResult<IEnumerable<AccountInfo>>([]));
+        regExp.Setups.GetEnabledAccounts().ReturnValue([]);
 
         var factExp = new IProviderServiceFactoryCreateExpectations();
         var tool = new SearchContactsTool(regExp.Instance(), factExp.Instance(),
@@ -56,8 +54,7 @@ public class ContactsFanOutTests
             permissions: AccountPermissions.None.With(AccountPermission.EmailRead, true));
 
         var regExp = new IAccountRegistryCreateExpectations();
-        regExp.Setups.GetAllAccountsAsync()
-            .ReturnValue(Task.FromResult<IEnumerable<AccountInfo>>([emailOnly]));
+        regExp.Setups.GetEnabledAccounts().ReturnValue([emailOnly]);
 
         var tool = new GetContactsTool(regExp.Instance(),
             new IProviderServiceFactoryCreateExpectations().Instance(),

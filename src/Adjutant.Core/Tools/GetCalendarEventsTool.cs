@@ -44,9 +44,9 @@ public sealed class GetCalendarEventsTool(
         // so this flag stays false there to avoid a redundant ListCalendarsAsync call.
         var validateCalendarId = false;
 
-        // Set when the all-accounts fan-out finds no enabled accounts: an empty result plus a
-        // warning, not an error (see ToolGuard.NoAccountsConfiguredWarning).
-        var noAccountsConfigured = false;
+        // A failed or unreadable account is reported here rather than being indistinguishable
+        // from one with no events. A server with no enabled accounts gets an entry too.
+        var warnings = new List<object>();
 
         List<AccountInfo> validAccounts;
         if (!string.IsNullOrEmpty(accountId))
@@ -62,77 +62,31 @@ public sealed class GetCalendarEventsTool(
         }
         else if (!string.IsNullOrEmpty(calendarId))
         {
-            // calendarId provided but no accountId — try to resolve the account automatically
-            try
+            // calendarId provided but no accountId — try to resolve the account automatically.
+            // With no enabled accounts nothing can own the calendar: report that the same way as
+            // the all-accounts fan-out (empty result + warning) rather than as "not found".
+            var enabledAccounts = ToolGuard.GetFanOutAccounts(accountRegistry, warnings);
+            if (enabledAccounts.Count == 0)
             {
-                // Only calendar-capable accounts can own a calendar; skip email-only accounts
-                // (e.g. IMAP) so their NotSupportedException doesn't pollute the lookup.
-                var allAccounts = accountRegistry.GetEnabledAccounts()
-                    .Where(AccountCapabilities.HasCalendar)
-                    .ToList();
-                var lookupFailures = new List<string>();
-                var lookupTasks = allAccounts.Select(async acc =>
-                {
-                    try
-                    {
-                        var prov = providerFactory.GetProvider(acc.Provider);
-                        var cals = await prov.ListCalendarsAsync(acc.Id, CancellationToken.None);
-                        return cals.Any(c => c.Id == calendarId) ? acc.Id : null;
-                    }
-                    catch (Exception ex)
-                    {
-                        logger.LogWarning(ex, "Error listing calendars for account {AccountId} during calendar lookup", acc.Id);
-                        lock (lookupFailures)
-                        {
-                            lookupFailures.Add($"{acc.Id}: {ToolGuard.DescribeAccountFailure(ex, "calendars")}");
-                        }
-                        return null;
-                    }
-                });
-
-                var lookupResults = await Task.WhenAll(lookupTasks);
-                var matchingAccountIds = lookupResults.OfType<string>().ToList();
-
-                if (matchingAccountIds.Count == 0)
-                {
-                    // An unreadable account may be the one that owns the calendar, so say so rather
-                    // than reporting a flat "not found".
-                    var unreadable = lookupFailures.Count > 0
-                        ? $" Some accounts could not be checked: {string.Join(" ", lookupFailures)}"
-                        : "";
-                    throw new McpException($"No calendar found with id '{calendarId}'. Provide accountId to specify which account to query.{unreadable}");
-                }
-
-                if (matchingAccountIds.Count > 1)
-                    throw new McpException($"calendarId '{calendarId}' exists in multiple accounts; provide accountId to specify which account to query.");
-
-                accountId = matchingAccountIds[0];
-                logger.LogInformation("Resolved accountId={AccountId} from calendarId={CalendarId}", accountId, calendarId);
+                validAccounts = new List<AccountInfo>();
             }
-            catch (Exception ex) when (ex is not McpException)
+            else
             {
-                logger.LogError(ex, "Error resolving accountId from calendarId {CalendarId}", calendarId);
-                throw ToolGuard.Failure("resolve account from calendarId", ex);
+                accountId = await ResolveAccountForCalendarAsync(enabledAccounts, calendarId);
+                validAccounts = new List<AccountInfo> { await ToolGuard.RequireAccountAsync(accountRegistry, accountId) };
             }
-
-            validAccounts = new List<AccountInfo> { await ToolGuard.RequireAccountAsync(accountRegistry, accountId) };
         }
         else
         {
             // Neither accountId nor calendarId supplied — query all enabled accounts.
-            validAccounts = accountRegistry.GetEnabledAccounts().ToList();
-            noAccountsConfigured = validAccounts.Count == 0;
+            validAccounts = ToolGuard.GetFanOutAccounts(accountRegistry, warnings);
         }
 
         // An account may be unreadable for two reasons: the provider has no calendar at all
         // (e.g. IMAP), where a read would throw NotSupportedException and surface a misleading
         // "Failed to retrieve events" warning, or the operator revoked calendar-read on it.
         //   - explicit accountId targeting such an account -> actionable warning, no fetch
-        //   - all-accounts fan-out -> silently skip them
-        var warnings = new List<object>();
-        if (noAccountsConfigured)
-            warnings.Add(ToolGuard.NoAccountsConfiguredWarning());
-
+        //   - all-accounts fan-out -> skip them, with one warning if that skips every account
         if (!string.IsNullOrEmpty(accountId))
         {
             var only = validAccounts[0];
@@ -151,10 +105,12 @@ public sealed class GetCalendarEventsTool(
                 validAccounts = new List<AccountInfo>();
             }
         }
-        else
+        else if (validAccounts.Count > 0)
         {
             validAccounts = ToolGuard.FilterByPermission(
                 validAccounts, AccountPermission.CalendarRead, logger, "get_calendar_events");
+            if (validAccounts.Count == 0)
+                warnings.Add(ToolGuard.NoPermittedAccountsWarning(AccountPermission.CalendarRead));
         }
 
         // startDate/endDate are local calendar dates in tz; endDay is exclusive.
@@ -298,6 +254,63 @@ public sealed class GetCalendarEventsTool(
         {
             logger.LogError(ex, "Error in get_calendar_events tool");
             throw ToolGuard.Failure("get calendar events", ex);
+        }
+    }
+
+    /// <summary>
+    /// Finds the one enabled, calendar-capable account that owns <paramref name="calendarId"/>.
+    /// Throws when no account or more than one does.
+    /// </summary>
+    private async Task<string> ResolveAccountForCalendarAsync(List<AccountInfo> enabledAccounts, string calendarId)
+    {
+        try
+        {
+            // Only calendar-capable accounts can own a calendar; skip email-only accounts
+            // (e.g. IMAP) so their NotSupportedException doesn't pollute the lookup.
+            var calendarAccounts = enabledAccounts.Where(AccountCapabilities.HasCalendar).ToList();
+            var lookupFailures = new List<string>();
+            var lookupTasks = calendarAccounts.Select(async acc =>
+            {
+                try
+                {
+                    var prov = providerFactory.GetProvider(acc.Provider);
+                    var cals = await prov.ListCalendarsAsync(acc.Id, CancellationToken.None);
+                    return cals.Any(c => c.Id == calendarId) ? acc.Id : null;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Error listing calendars for account {AccountId} during calendar lookup", acc.Id);
+                    lock (lookupFailures)
+                    {
+                        lookupFailures.Add($"{acc.Id}: {ToolGuard.DescribeAccountFailure(ex, "calendars")}");
+                    }
+                    return null;
+                }
+            });
+
+            var lookupResults = await Task.WhenAll(lookupTasks);
+            var matchingAccountIds = lookupResults.OfType<string>().ToList();
+
+            if (matchingAccountIds.Count == 0)
+            {
+                // An unreadable account may be the one that owns the calendar, so say so rather
+                // than reporting a flat "not found".
+                var unreadable = lookupFailures.Count > 0
+                    ? $" Some accounts could not be checked: {string.Join(" ", lookupFailures)}"
+                    : "";
+                throw new McpException($"No calendar found with id '{calendarId}'. Provide accountId to specify which account to query.{unreadable}");
+            }
+
+            if (matchingAccountIds.Count > 1)
+                throw new McpException($"calendarId '{calendarId}' exists in multiple accounts; provide accountId to specify which account to query.");
+
+            logger.LogInformation("Resolved accountId={AccountId} from calendarId={CalendarId}", matchingAccountIds[0], calendarId);
+            return matchingAccountIds[0];
+        }
+        catch (Exception ex) when (ex is not McpException)
+        {
+            logger.LogError(ex, "Error resolving accountId from calendarId {CalendarId}", calendarId);
+            throw ToolGuard.Failure("resolve account from calendarId", ex);
         }
     }
 

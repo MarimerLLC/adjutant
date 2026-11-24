@@ -93,12 +93,13 @@ internal static class ToolGuard
     }
 
     /// <summary>
-    /// What a fan-out read tool tells the caller when the server has no (enabled) accounts at all.
-    /// Says how to fix it, since the agent can only relay it to the user.
+    /// What a fan-out read tool tells the caller when the server has no enabled accounts at all.
+    /// Says how to fix it, since the agent can only relay it to the user. Names both routes: the
+    /// stdio server registers the same tools and has no admin console.
     /// </summary>
     public const string NoAccountsConfiguredMessage =
-        "No enabled accounts are configured on this server. Add one (or enable an existing one) " +
-        "in the admin console, or add one with the CLI (e.g. 'adjutant-cli add-m365-account').";
+        "No enabled accounts are configured on this server. Add one in the admin console " +
+        "(HTTP server) or with the CLI (e.g. 'adjutant-cli add-m365-account'), or enable an existing one.";
 
     /// <summary>
     /// The <c>warnings</c> entry a fan-out read tool returns, alongside an empty result, when the
@@ -113,8 +114,33 @@ internal static class ToolGuard
     /// a bare "no accounts found".
     /// </summary>
     public static McpException NoPermittedAccounts(AccountPermission permission) =>
-        new($"No accounts permit {AccountPermissions.Describe(permission)}. " +
-            "Use list_accounts to see each account's permissions.");
+        new(DescribeNoPermittedAccounts(permission));
+
+    /// <summary>
+    /// The <see cref="NoPermittedAccounts"/> text as a <c>warnings</c> entry, for the calendar
+    /// fan-outs: they report an unreadable account as a warning rather than an error (an
+    /// email-only server asking for events is not a failure), but the caller must still be able
+    /// to tell "scoped out" from "no events".
+    /// </summary>
+    public static object NoPermittedAccountsWarning(AccountPermission permission) =>
+        new { warning = DescribeNoPermittedAccounts(permission) };
+
+    private static string DescribeNoPermittedAccounts(AccountPermission permission) =>
+        $"No accounts permit {AccountPermissions.Describe(permission)}. " +
+        "Use list_accounts to see each account's permissions.";
+
+    /// <summary>
+    /// The accounts an all-accounts fan-out starts from: the enabled ones. When there are none,
+    /// adds <see cref="NoAccountsConfiguredWarning"/> to <paramref name="warnings"/>, so every
+    /// fan-out reports an empty or all-disabled server the same way.
+    /// </summary>
+    public static List<AccountInfo> GetFanOutAccounts(IAccountRegistry registry, List<object> warnings)
+    {
+        var accounts = registry.GetEnabledAccounts().ToList();
+        if (accounts.Count == 0)
+            warnings.Add(NoAccountsConfiguredWarning());
+        return accounts;
+    }
 
     /// <summary>
     /// Builds the exception a tool throws when a provider call fails: <c>"Failed to {action}."</c>,

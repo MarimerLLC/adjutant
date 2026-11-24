@@ -39,12 +39,8 @@ public sealed class SearchEmailsTool(
         List<AccountInfo> validAccounts;
         if (string.IsNullOrEmpty(accountId))
         {
-            validAccounts = (await accountRegistry.GetAllAccountsAsync()).ToList();
-            if (validAccounts.Count == 0)
-            {
-                warnings.Add(ToolGuard.NoAccountsConfiguredWarning());
-            }
-            else
+            validAccounts = ToolGuard.GetFanOutAccounts(accountRegistry, warnings);
+            if (validAccounts.Count > 0)
             {
                 // Skip accounts that don't permit email reads — the caller asked for "all
                 // accounts", and a scoped-out account simply isn't part of that set.

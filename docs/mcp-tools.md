@@ -65,10 +65,12 @@ Two behaviours differ by how the account was chosen:
   account *does* permit, so the caller can pick a different one. `get_calendar_events` is the
   exception: it returns an empty result with a warning, matching how it already handles
   email-only accounts.
-- **Fan-out** (`accountId` omitted) — accounts lacking the permission are silently skipped; the
-  caller asked for "all accounts", and a scoped-out account isn't part of that set. If accounts
-  exist but none qualify, the tool errors with `No accounts permit ...`. If the server has no
-  accounts at all, the tool returns an empty result plus a `warnings` entry (see
+- **Fan-out** (`accountId` omitted) — only enabled accounts are queried, and those lacking the
+  permission are silently skipped; the caller asked for "all accounts", and a scoped-out account
+  isn't part of that set. If enabled accounts exist but none qualify, the email and contacts
+  tools error with `No accounts permit ...`, while `list_calendars` and `get_calendar_events`
+  return an empty result with one `warnings` entry carrying the same text. If the server has no
+  enabled accounts at all, the tool returns an empty result plus a `warnings` entry (see
   [No accounts configured](#no-accounts-configured)).
 
 Smart routing (`send_email`, `create_event`, `create_contact`, `delete_event`,
@@ -902,20 +904,22 @@ error. A genuine "not found" (HTTP 404) is still reported as not found.
 
 ### No accounts configured
 
-When `accountId` is omitted and the server has no (enabled) accounts, the same read tools return
+When `accountId` is omitted and the server has no enabled accounts, the same read tools return
 their normal empty result rather than an error, with one `warnings` entry that has no `accountId`:
 
 ```json
 {
   "emails": [],
   "warnings": [
-    { "warning": "No enabled accounts are configured on this server. Add one (or enable an existing one) in the admin console, or add one with the CLI (e.g. 'adjutant-cli add-m365-account')." }
+    { "warning": "No enabled accounts are configured on this server. Add one in the admin console (HTTP server) or with the CLI (e.g. 'adjutant-cli add-m365-account'), or enable an existing one." }
   ]
 }
 ```
 
 `get_contextual_email_summary` returns its "no emails found" payload (`accountsSearched: 0`) with
-the same warning. An explicit `accountId` that doesn't exist is still an error.
+the same warning. `get_calendar_events` given only a `calendarId` returns `events: []` with the
+warning rather than "No calendar found". An explicit `accountId` that doesn't exist is still an
+error.
 
 ## Transport
 

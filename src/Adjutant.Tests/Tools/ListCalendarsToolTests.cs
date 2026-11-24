@@ -76,6 +76,30 @@ public class ListCalendarsToolTests
     }
 
     [TestMethod]
+    public async Task ListCalendars_NoAccountPermitsCalendars_ReturnsEmptyWithPermissionWarning()
+    {
+        // Accounts exist but none can be read for calendars (email-only IMAP): an empty list must
+        // not look like "no calendars".
+        var emailOnly = TestData.CreateAccount(id: "acc-imap", provider: "imap");
+
+        var regExp = new IAccountRegistryCreateExpectations();
+        regExp.Setups.GetEnabledAccounts().ReturnValue([emailOnly]);
+
+        var factExp = new IProviderServiceFactoryCreateExpectations();
+        var tool = new ListCalendarsTool(regExp.Instance(), factExp.Instance(),
+            NullLogger<ListCalendarsTool>.Instance);
+
+        var doc = JsonDocument.Parse(await tool.ListCalendars());
+
+        Assert.AreEqual(0, doc.RootElement.GetProperty("calendars").GetArrayLength());
+        var warnings = doc.RootElement.GetProperty("warnings");
+        Assert.AreEqual(1, warnings.GetArrayLength());
+        StringAssert.Contains(warnings[0].GetProperty("warning").GetString(), "No accounts permit reading calendars");
+        regExp.Verify();
+        factExp.Verify();
+    }
+
+    [TestMethod]
     public async Task ListCalendars_AllAccounts_ReturnsCalendars()
     {
         var acc1 = TestData.CreateAccount(id: "acc-1", provider: "microsoft365");
