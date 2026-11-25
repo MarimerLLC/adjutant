@@ -61,7 +61,8 @@ public class AccountRegistry : IAccountRegistry, IDisposable
         }
         else
         {
-            _logger.LogWarning("No accounts found in configuration. Add accounts using the CLI: adjutant-cli add-m365-account");
+            _logger.LogWarning("No accounts found in configuration. Add accounts in the admin console " +
+                "(/admin/ui on the HTTP server) or with the CLI (adjutant-cli add-m365-account, add-google-account, ...).");
         }
 
         return accounts;

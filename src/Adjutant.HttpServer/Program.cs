@@ -328,6 +328,9 @@ public class Program
         Log.Information("  Health:        /health");
         Log.Information("  MCP OAuth:     /.well-known/oauth-protected-resource (offered while an admin sign-in provider is configured)");
 
+        // While no accounts exist, say what to do next, using the address just bound.
+        app.LogFirstRunGuide();
+
         app.WaitForShutdown();
     }
 }

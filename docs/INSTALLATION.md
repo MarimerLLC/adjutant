@@ -18,6 +18,7 @@ This guide provides step-by-step instructions for installing and configuring the
   - [VS Code with GitHub Copilot](#vs-code-with-github-copilot)
   - [Other MCP Clients](#other-mcp-clients)
 - [Deployment](#deployment)
+  - [First run (HTTP server)](#first-run-http-server)
 - [Verification](#verification)
 - [Troubleshooting](#troubleshooting)
 
@@ -344,6 +345,40 @@ The Windows installer sets up the CLI and the stdio server only. For the HTTP se
 admin console sign-in (Google or Microsoft, a first-run claim code) and an MCP endpoint that
 needs an API key, see [Admin Console Sign-In](configuration.md#admin-console-sign-in-http-server)
 and, for internet exposure, [Public Access](PUBLIC-ACCESS.md).
+
+### First run (HTTP server)
+
+On a first start (for example `docker compose up -d` with an empty data volume), the startup log
+holds everything needed to get going. Read it with `docker compose logs adjutant` or
+`kubectl logs deploy/adjutant -n adjutant`. It contains:
+
+- **Admin token**, unless `ADJUTANT_ADMIN_TOKEN` is set. Generated once and stored hashed, so copy
+  it then. See [The admin token](configuration.md#the-admin-token).
+- **MCP API key**, unless `ADJUTANT_MCP_KEY` is set. Also generated once.
+- **Claim code**, while no admin allow-list exists. Needed only for a first sign-in with Google or
+  Microsoft. See [Admin Console Sign-In](configuration.md#admin-console-sign-in-http-server).
+- **Next steps**, printed on every start until the first account exists:
+
+```
+========================================================================
+Adjutant is running, but no accounts are configured yet. Next steps:
+  1. Open http://<host>:8080/admin/ui and sign in with the admin token ...
+  2. Add an email/calendar account (http://<host>:8080/admin/ui/accounts/add).
+  3. Point your MCP client at http://<host>:8080/ with an MCP API key ...
+========================================================================
+```
+
+Step 1 names the sign-in options actually enabled on the server. The address is
+`Adjutant:ExternalBaseUrl` when set. Otherwise it is the address the server listens on, with
+`<host>` standing in for the name you reach the server by.
+
+Then:
+
+1. Open the console and sign in as step 1 says.
+2. Add an account. It takes effect immediately, no restart needed. Microsoft 365, Outlook.com and
+   Google accounts also need a sign-in from the account's page.
+3. Connect your MCP client to the server root with the MCP API key. See
+   [MCP endpoint API keys](configuration.md#mcp-endpoint-api-keys-http-server).
 
 ## Verification
 
