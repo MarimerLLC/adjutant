@@ -20,15 +20,25 @@ files, layered:
 
 Environment variables still apply last. The startup log names both files and whether each was found.
 
-Side effect: the shipped `Kestrel` endpoint (`http://+:8080`) now stays in effect after the
-operator's file appears. Before, it silently dropped out on the second start. The Docker image sets
-`ASPNETCORE_URLS=http://+:8080` as well, so the listening port doesn't change.
+## Listening address
 
-A Kestrel endpoint takes precedence over `ASPNETCORE_URLS`, which therefore no longer changes the
-port on any start; before, it applied from the second start on. Change the port with
-`Kestrel:Endpoints:Http:Url` in the data-directory file, or with
-`ADJUTANT_Kestrel__Endpoints__Http__Url`. A manual run confirmed `ASPNETCORE_URLS` is overridden.
-No shipped deployment sets it to anything but 8080.
+The shipped appsettings.json had a `Kestrel` endpoint, `http://+:8080`. Layered under the operator's
+file, it would have applied on every start and overridden `ASPNETCORE_URLS`. That includes the
+`localhost` URL in launchSettings.json, so `dotnet run` would have listened on every interface.
+The endpoint is removed from the shipped file. Where the server listens:
+
+| Setup | Before | Now |
+|---|---|---|
+| Docker image (`ASPNETCORE_URLS=http://+:8080`) | `+:8080` | `+:8080` |
+| `dotnet run` (launchSettings `localhost:8080`) | first start `+:8080`, then `localhost:8080` | `localhost:8080` |
+| Bare run, nothing set | first start `+:8080`, then `localhost:5000` | `localhost:8080` |
+| `ASPNETCORE_HTTP_PORTS` | ignored (dropped with the default sources) | honored |
+| `Kestrel:Endpoints` / `ADJUTANT_Kestrel__Endpoints__Http__Url` | honored | honored |
+
+`ASPNETCORE_URLS`, `--urls` and `ASPNETCORE_HTTP(S)_PORTS` are read before the default
+configuration sources are cleared. The two port settings are reapplied afterwards. When nothing
+sets an address, `ServerConfigurationSources.DefaultUrlWhenUnconfigured` supplies
+`http://localhost:8080`. Each row was checked against the built server.
 
 ## Tests
 
