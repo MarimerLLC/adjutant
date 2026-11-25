@@ -39,6 +39,10 @@ applied over it. The data-directory file is watched for changes even before it e
 first run the admin console's first save creates it and takes effect without a restart.
 Environment variables apply over both.
 
+The shipped `Kestrel` endpoint takes precedence over `ASPNETCORE_URLS`. To listen on another
+port, set `Kestrel:Endpoints:Http:Url` in the data-directory `appsettings.json`, or set the
+environment variable `ADJUTANT_Kestrel__Endpoints__Http__Url` (for example `http://+:5080`).
+
 ### Environment Variable Override
 
 To use a custom configuration location:
