@@ -19,6 +19,9 @@ public class AdminAuthMiddleware
     private readonly string? _adminToken;
     private readonly ILogger<AdminAuthMiddleware> _logger;
 
+    private const long FunnelRefusalLogIntervalMs = 60_000;
+    private long _lastFunnelRefusalLog = long.MinValue / 2;
+
     // Paths that are exempt from admin token validation (Blazor UI login and static files)
     private static readonly string[] ExemptPaths =
     [
@@ -139,8 +142,16 @@ public class AdminAuthMiddleware
             return;
         }
 
-        _logger.LogWarning("Refused admin API request over Tailscale Funnel from {RemoteIp}",
-            context.Connection.RemoteIpAddress);
+        // Internet scanners probe /admin/* constantly, so the warning is throttled to one a minute.
+        var now = Environment.TickCount64;
+        var last = Interlocked.Read(ref _lastFunnelRefusalLog);
+        if (now - last >= FunnelRefusalLogIntervalMs &&
+            Interlocked.CompareExchange(ref _lastFunnelRefusalLog, now, last) == last)
+        {
+            _logger.LogWarning("Refused admin API request over Tailscale Funnel from {RemoteIp} " +
+                "(logged at most once a minute)", context.Connection.RemoteIpAddress);
+        }
+
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
         await context.Response.WriteAsJsonAsync(new { error = "The admin API is available only from inside the tailnet." });
     }

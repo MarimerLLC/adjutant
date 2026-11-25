@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Adjutant.Core.Configuration;
 using Adjutant.Core.Security;
 using Adjutant.HttpServer.BlazorAdmin;
+using Adjutant.HttpServer.Security;
 using Microsoft.AspNetCore;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Authentication;
@@ -97,7 +98,8 @@ internal static class AuthorizationEndpoint
             return Results.BadRequest("The consent form expired. Start connecting the app again.");
         if (http.Request.Form[DecisionField] != Allow)
             return Reject(Errors.AccessDenied, "You didn't allow the app to connect.");
-        if (user is null || !CanApprove(user, environment.IsDevelopment()))
+        // Over Funnel even Development doesn't let a token session approve: the token is tailnet-only.
+        if (user is null || !CanApprove(user, environment.IsDevelopment() && !FunnelRequest.IsFunnel(http)))
             return Reject(Errors.AccessDenied, "Connecting an app needs a Google or Microsoft sign-in, not the admin token.");
 
         var email = user.FindFirstValue(ClaimTypes.Email);

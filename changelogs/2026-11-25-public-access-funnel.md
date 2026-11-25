@@ -22,6 +22,11 @@ header. On those requests the break-glass admin token is never accepted (`Funnel
 - The REST API under `/admin/*` returns `401` over Funnel, even with the correct token, and even
   with no token configured, where it would otherwise be open.
 
+- `/connect/authorize` and the consent page no longer let a token session approve an MCP client
+  over Funnel, even in Development, where they otherwise allow it.
+- The REST refusal's log warning is throttled to one a minute, because scanners probe `/admin/*`
+  constantly.
+
 Provider sign-in, MCP API keys and MCP OAuth are unaffected. The header only removes access, so a
 forged one grants nothing. If the proxy ever stopped sending it, behaviour falls back to the
 pre-Funnel rules, which is why the runbook's verification step checks for it.
@@ -32,8 +37,11 @@ password away from the internet.
 
 ## Manifest
 
-- `tailscale.com/funnel: "true"` on the `adjutant-tailscale` Ingress, with the prerequisites in a
-  comment. Applying the manifest is what publishes the server.
+- A `tailscale.com/funnel` annotation on the `adjutant-tailscale` Ingress, with the prerequisites
+  in a comment. It ships as `"false"`, so a new deployment comes up tailnet-only and can be
+  claimed first. It also means applying the manifest doesn't publish an image that lacks the
+  Funnel check: the current tag, `2.0.0`, predates it. Flipping it to `"true"`, together with a
+  release image tag, is the deliberate step that publishes the server.
 - `ADJUTANT_Adjutant__ExternalBaseUrl` set to the Ingress host, so a fresh data volume can't
   come up with a missing or `http://` base URL.
 

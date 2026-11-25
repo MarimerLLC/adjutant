@@ -68,8 +68,12 @@ public sealed partial class AdminFunnelIntegrationTests
         var browser = _app.CreateBrowser();
         var fields = await LoginFormFieldsAsync(browser.Http);
 
-        // Over Funnel the form is not rendered, so Blazor rejects the post (400) before the handler,
-        // whose own Funnel check is the second line. Either way: no redirect, no session.
+        // Over Funnel the form is not rendered, so Blazor rejects the post (400) before the handler.
+        // This is the framework's form-name check, not the Funnel guard in HandleLoginAsync. That
+        // guard can't be reached while the form's visibility and the handler see the same request,
+        // so it is defense in depth and this test does not cover it. If the form is ever rendered
+        // over Funnel, the guard becomes the only line and needs its own test. Either way: no
+        // redirect, no session.
         using var refused = await PostLoginAsync(browser.Http, fields, viaFunnel: true);
         Assert.AreNotEqual(HttpStatusCode.Redirect, refused.StatusCode, await refused.Content.ReadAsStringAsync());
         Assert.IsFalse(SetsAdminCookie(refused), "no session may be issued over Funnel");

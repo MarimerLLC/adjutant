@@ -148,6 +148,8 @@
         }
 
         // The break-glass token is never accepted from the public internet (see FunnelRequest).
+        // Unreachable today: over Funnel the form isn't rendered, so Blazor rejects the post first.
+        // Defense in depth, in case the form is ever shown there; that change needs a test for this.
         if (FunnelRequest.IsFunnel(httpContext))
         {
             _errorMessage = "Admin-token sign-in is available only from inside the tailnet.";

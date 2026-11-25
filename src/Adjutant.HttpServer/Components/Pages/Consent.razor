@@ -124,7 +124,8 @@
         HttpContext.Response.Headers.ContentSecurityPolicy = "frame-ancestors 'none'";
 
         var user = HttpContext.User;
-        _canApprove = AuthorizationEndpoint.CanApprove(user, Environment.IsDevelopment());
+        _canApprove = AuthorizationEndpoint.CanApprove(
+            user, Environment.IsDevelopment() && !Adjutant.HttpServer.Security.FunnelRequest.IsFunnel(HttpContext));
         _signedInAs = user.FindFirstValue(ClaimTypes.Email) ?? user.FindFirstValue(ClaimTypes.Name);
 
         var query = HttpContext.Request.Query;

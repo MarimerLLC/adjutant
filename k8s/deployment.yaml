@@ -8,9 +8,10 @@
 #   3. Deploy: kubectl apply -f deployment.yaml
 #   4. Access via port-forward: kubectl port-forward -n adjutant svc/adjutant 8080:8080
 #
-# PUBLIC: the Ingress below carries tailscale.com/funnel: "true", so applying this file publishes
-# the server to the internet. Work through docs/PUBLIC-ACCESS.md before the first apply on a new
-# deployment, and remember that every later apply (an image bump included) keeps it public.
+# Public access: the Ingress below carries tailscale.com/funnel, shipped as "false" so a first
+# apply comes up tailnet-only. Claim the server from inside the tailnet, work through
+# docs/PUBLIC-ACCESS.md, then set it to "true" and apply again. Once it is "true", every later
+# apply (an image bump included) keeps the server public.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -116,12 +117,13 @@ metadata:
     tailscale.com/hostname: adjutant
     # The operator's default tag (tag:k8s) is not permitted by the tailnet ACL.
     tailscale.com/tags: tag:k8s-operator
-    # Publishes this host to the internet through Tailscale Funnel. Prerequisites, all checked in
-    # docs/PUBLIC-ACCESS.md: MCP keys enforced, a sign-in provider configured and the server claimed
-    # (admin-users.json exists), an image that refuses the admin token over Funnel, and the
-    # tailnet policy granting the "funnel" node attribute to tag:k8s-operator.
-    # To un-publish, remove this line (or set it to "false") and apply again.
-    tailscale.com/funnel: "true"
+    # "true" publishes this host to the internet through Tailscale Funnel. Prerequisites, all
+    # checked in docs/PUBLIC-ACCESS.md: MCP keys enforced, a sign-in provider configured and the
+    # server claimed (admin-users.json exists), the image above refuses the admin token over
+    # Funnel (2.0.0 does not; bump it to a release that does in the same change), and the tailnet
+    # policy granting the "funnel" node attribute to tag:k8s-operator.
+    # To un-publish, set it back to "false" and apply again.
+    tailscale.com/funnel: "false"
 spec:
   ingressClassName: tailscale
   tls:

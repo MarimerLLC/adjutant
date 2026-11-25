@@ -24,6 +24,10 @@ rather than a shared password on the internet. See
 
 Work through these from inside the tailnet. Don't enable Funnel until every one is true.
 
+On a **new deployment**, apply `k8s/deployment.yaml` as shipped first. Its Funnel annotation is
+`"false"`, so the server comes up reachable only inside the tailnet, where steps 3 and 4 can be
+done with the admin token. Enable Funnel afterwards, as described below.
+
 1. **MCP keys are enforced.** `Adjutant:Mcp:RequireApiKey` is `true` (the default) and every
    client that calls the server has its own key under **MCP Access**.
 2. **`ExternalBaseUrl` is the HTTPS public origin.** For the manifest's Ingress that is
@@ -38,12 +42,13 @@ Work through these from inside the tailnet. Don't enable Funnel until every one 
    the login page no longer shows the token field:
 
    ```bash
-   kubectl -n adjutant exec deploy/adjutant -- ls /app/data/admin-users.json
+   MSYS_NO_PATHCONV=1 kubectl -n adjutant exec deploy/adjutant -- ls /app/data/admin-users.json
    ```
 
-5. **The running image refuses the admin token over Funnel.** The Funnel checks in this runbook
-   need an image built from a commit that includes `FunnelRequest`. Images before that accept
-   the token from anywhere.
+5. **The manifest's image refuses the admin token over Funnel.** The `image:` in
+   `k8s/deployment.yaml` must be built from a commit that includes `FunnelRequest`. Images
+   before that, including `2.0.0`, accept the token from anywhere. Bump the tag in the same
+   change that sets the annotation to `"true"`, because applying the file deploys that image.
 6. **The tailnet policy allows Funnel for the proxy's tag.** The Ingress proxy runs as
    `tag:k8s-operator` (the `tailscale.com/tags` annotation). The tailnet policy file needs:
 
@@ -58,9 +63,9 @@ Work through these from inside the tailnet. Don't enable Funnel until every one 
 
 ## Enabling it
 
-Funnel is switched on by the `tailscale.com/funnel: "true"` annotation on the
-`adjutant-tailscale` Ingress in `k8s/deployment.yaml`. Applying the manifest is what flips it,
-so check what will change first:
+Funnel is controlled by the `tailscale.com/funnel` annotation on the `adjutant-tailscale`
+Ingress in `k8s/deployment.yaml`, which ships as `"false"`. Change it to `"true"`. Applying the
+manifest is what flips it, so check what will change first:
 
 ```bash
 MSYS_NO_PATHCONV=1 kubectl diff -f k8s/deployment.yaml
@@ -102,10 +107,11 @@ accepted from the internet. **Turn Funnel back off** (see below) until that is r
 Then check the log line the refused request wrote:
 
 ```bash
-kubectl -n adjutant logs deploy/adjutant | grep 'over Tailscale Funnel'
+MSYS_NO_PATHCONV=1 kubectl -n adjutant logs deploy/adjutant | grep 'over Tailscale Funnel'
 ```
 
-The address it names should be your outside machine's public IP. Sign-in rate limits are
+The warning is throttled to one a minute, so if a scanner got in first, repeat the `curl` a
+minute later. The address it names should be your outside machine's public IP. Sign-in rate limits are
 partitioned by that address. If every Funnel request shows the same address instead (a
 Tailscale relay), all internet users share one 10-per-minute sign-in bucket. That is a nuisance
 rather than a bypass, but worth knowing.
@@ -122,9 +128,9 @@ before depending on it.
 
 ## Turning it off
 
-Remove the `tailscale.com/funnel` annotation (or set it to `"false"`) and apply the manifest
-again. The server stays reachable inside the tailnet. Nothing on the data volume changes, and
-keys, OAuth clients and console users are kept.
+Set the `tailscale.com/funnel` annotation back to `"false"` and apply the manifest again. The
+server stays reachable inside the tailnet. Nothing on the data volume changes, and keys, OAuth
+clients and console users are kept.
 
-Keep in mind that while the annotation is in `k8s/deployment.yaml`, **any** apply of that file
-re-publishes the server, including a routine image bump.
+Keep in mind that while the annotation is `"true"` in `k8s/deployment.yaml`, **any** apply of
+that file re-publishes the server, including a routine image bump.
