@@ -25,7 +25,7 @@ public static class AdminAuthStartup
             logger.LogInformation("No admin console sign-in providers are configured.");
 
         var users = app.Services.GetRequiredService<IAdminUserStore>();
-        if (config.IsTokenLoginAllowed(users.HasRecordedSignIn))
+        if (config.IsTokenLoginAllowed(users))
         {
             logger.LogWarning(
                 "Admin token login is enabled on the console login page. It is the break-glass path " +

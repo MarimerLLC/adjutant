@@ -151,9 +151,12 @@ public sealed class ConfigureAdminOidcOptions : IConfigureNamedOptions<OpenIdCon
     /// request to it then goes nowhere instead of driving this handler into a metadata lookup
     /// against an address that does not resolve.
     /// </summary>
+    /// <summary>The ClientId given to a scheme's options while they are inert.</summary>
+    public const string InertClientId = "unconfigured";
+
     private static void ConfigureInert(string scheme, OpenIdConnectOptions options)
     {
-        options.ClientId = "unconfigured";
+        options.ClientId = InertClientId;
         options.Authority = "https://unconfigured.invalid";
         options.CallbackPath = $"{AdminOidc.CallbackPath(scheme)}-unconfigured";
     }

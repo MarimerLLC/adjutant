@@ -46,11 +46,49 @@ public class AdminAuthConfigurationTests
     }
 
     [TestMethod]
-    public void Automatic_StaysOffIfTheProviderIsLaterRemoved()
+    public void Automatic_ComesBackWhenEveryProviderIsRemoved()
     {
-        // Someone has signed in before, so the console is not fresh; the explicit setting is the
-        // way back in.
-        Assert.IsFalse(Config(null, withProvider: false).IsTokenLoginAllowed(oidcSignInRecorded: true));
+        // With no provider left there is no other way in, whatever worked before.
+        Assert.IsTrue(Config(null, withProvider: false).IsTokenLoginAllowed(oidcSignInRecorded: true));
+    }
+
+    [TestMethod]
+    public void Automatic_IgnoresSignInsThroughAProviderNoLongerConfigured()
+    {
+        // Google worked once, then was replaced by a Microsoft provider that has not worked yet.
+        var store = new FakeUsers("google");
+        Assert.IsTrue(Config(null, withProvider: true).IsTokenLoginAllowed(store));
+
+        store.Providers.Add("microsoft");
+        Assert.IsFalse(Config(null, withProvider: true).IsTokenLoginAllowed(store));
+    }
+
+    [TestMethod]
+    public void TheTokenFormIsNotOfferedWithoutATokenOnceAProviderIsConfigured()
+    {
+        // With no admin token configured the form accepts anything.
+        Assert.IsFalse(Config(null, withProvider: true).IsTokenFormOffered(false, adminTokenConfigured: false, development: false));
+        Assert.IsTrue(Config(null, withProvider: true).IsTokenFormOffered(false, adminTokenConfigured: true, development: false));
+        Assert.IsTrue(Config(null, withProvider: true).IsTokenFormOffered(false, adminTokenConfigured: false, development: true));
+        Assert.IsTrue(Config(null, withProvider: false).IsTokenFormOffered(false, adminTokenConfigured: false, development: false),
+            "unchanged from 2.0.0 while no provider is configured");
+        Assert.IsTrue(Config(true, withProvider: true).IsTokenFormOffered(false, adminTokenConfigured: false, development: false),
+            "an explicit setting still wins");
+    }
+
+    /// <summary>Records one sign-in per listed provider.</summary>
+    private sealed class FakeUsers(params string[] providers) : Adjutant.Core.Security.IAdminUserStore
+    {
+        public List<string> Providers { get; } = [.. providers];
+
+        public bool HasRecordedSignIn(IEnumerable<string> configured) =>
+            Providers.Intersect(configured, StringComparer.OrdinalIgnoreCase).Any();
+
+        public IReadOnlyList<Adjutant.Core.Security.AdminUser> List() => [];
+        public Adjutant.Core.Security.AdminUser? Find(string? email) => null;
+        public Adjutant.Core.Security.AdminSignInResult RecordSignIn(string email, string provider, string? subject) =>
+            throw new NotSupportedException();
+        public bool Remove(string email) => throw new NotSupportedException();
     }
 
     [TestMethod]

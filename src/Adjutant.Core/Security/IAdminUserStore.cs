@@ -9,11 +9,13 @@ public interface IAdminUserStore
     IReadOnlyList<AdminUser> List();
 
     /// <summary>
-    /// True once any OIDC admin sign-in has been recorded. Records are written only after the
-    /// allow-list check or the claim code has passed, so this means a provider is known to work
-    /// end to end, which is when the break-glass token login can safely turn itself off.
+    /// True once an OIDC admin sign-in has been recorded through one of <paramref name="providers"/>.
+    /// Records are written only after the allow-list check or the claim code has passed, so this
+    /// means one of those providers is known to work end to end, which is when the break-glass
+    /// token login can safely turn itself off. Pass the currently configured schemes: a sign-in
+    /// through a provider that has since been removed proves nothing about the ones left.
     /// </summary>
-    bool HasRecordedSignIn { get; }
+    bool HasRecordedSignIn(IEnumerable<string> providers);
 
     /// <summary>Looks up a user by email, or null when the address is unknown.</summary>
     AdminUser? Find(string? email);

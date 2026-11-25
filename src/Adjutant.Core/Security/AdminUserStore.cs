@@ -61,14 +61,15 @@ public sealed class AdminUserStore : IAdminUserStore
         }
     }
 
-    public bool HasRecordedSignIn
+    public bool HasRecordedSignIn(IEnumerable<string> providers)
     {
-        get
+        var schemes = providers.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (schemes.Count == 0)
+            return false;
+
+        lock (_gate)
         {
-            lock (_gate)
-            {
-                return _users.Count > 0;
-            }
+            return _users.Any(u => schemes.Contains(u.Provider));
         }
     }
 

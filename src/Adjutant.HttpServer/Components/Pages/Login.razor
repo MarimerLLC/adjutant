@@ -13,6 +13,7 @@
 @inject IConfiguration Configuration
 @inject IOptionsMonitor<AdminAuthConfiguration> AdminAuth
 @inject IAdminUserStore AdminUsers
+@inject IHostEnvironment HostEnvironment
 @inject NavigationManager Navigation
 @inject IHttpContextAccessor HttpContextAccessor
 
@@ -98,7 +99,7 @@
 
         var config = AdminAuth.CurrentValue;
         _providers = config.ConfiguredProviderSchemes().ToList();
-        _tokenLoginAllowed = config.IsTokenLoginAllowed(AdminUsers.HasRecordedSignIn);
+        _tokenLoginAllowed = TokenFormOffered();
 
         _errorMessage = Error switch
         {
@@ -127,14 +128,13 @@
         var httpContext = HttpContextAccessor.HttpContext;
         if (httpContext is null) return;
 
-        if (!AdminAuth.CurrentValue.IsTokenLoginAllowed(AdminUsers.HasRecordedSignIn))
+        if (!TokenFormOffered())
         {
             _errorMessage = "Token login is disabled on this server.";
             return;
         }
 
-        var expectedToken = LegacyNames.GetEnvironmentVariable("ADMIN_TOKEN")
-            ?? Configuration.GetValue<string>("Adjutant:AdminToken");
+        var expectedToken = ExpectedToken();
 
         // In dev mode (no token configured), allow any login
         if (!string.IsNullOrEmpty(expectedToken) && !TokensMatch(Input!.Token, expectedToken))
@@ -161,6 +161,23 @@
             new AuthenticationProperties { IsPersistent = true });
 
         Navigation.NavigateTo(LocalReturnUrl.Sanitize(ReturnUrl), forceLoad: true);
+    }
+
+    private string? ExpectedToken() =>
+        LegacyNames.GetEnvironmentVariable("ADMIN_TOKEN")
+        ?? Configuration.GetValue<string>("Adjutant:AdminToken");
+
+    /// <summary>
+    /// With no admin token configured the form accepts anything, so it is only offered where
+    /// <see cref="AdminAuthConfiguration.IsTokenFormOffered"/> allows that.
+    /// </summary>
+    private bool TokenFormOffered()
+    {
+        var config = AdminAuth.CurrentValue;
+        return config.IsTokenFormOffered(
+            AdminUsers.HasRecordedSignIn(config.ConfiguredProviderSchemes()),
+            adminTokenConfigured: !string.IsNullOrEmpty(ExpectedToken()),
+            development: HostEnvironment.IsDevelopment());
     }
 
     /// <summary>

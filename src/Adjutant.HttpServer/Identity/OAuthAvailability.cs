@@ -15,7 +15,8 @@ internal sealed class OAuthAvailability(
     IHostEnvironment environment)
 {
     public bool IsAvailable =>
-        Evaluate(server.CurrentValue, adminAuth.CurrentValue, environment.IsDevelopment(), adminUsers.HasRecordedSignIn);
+        Evaluate(server.CurrentValue, adminAuth.CurrentValue, environment.IsDevelopment(),
+            adminUsers.HasRecordedSignIn(adminAuth.CurrentValue.ConfiguredProviderSchemes()));
 
     /// <summary>
     /// OAuth is offered when the MCP endpoint is protected at all, OAuth isn't switched off, and

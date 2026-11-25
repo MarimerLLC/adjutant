@@ -816,7 +816,7 @@ matches every address in that domain. Matching ignores case and surrounding whit
 | Setting | Default | Effect |
 |---|---|---|
 | `AdminAuth:AllowedEmails` | empty | Who may sign in. Empty means unclaimed — see below. |
-| `AdminAuth:AllowTokenLogin` | `null` | `null` resolves to `true` until someone completes a provider sign-in (recorded in `admin-users.json`), and `false` from then on. Configuring a provider is not enough on its own. Set explicitly to override. |
+| `AdminAuth:AllowTokenLogin` | `null` | `null` resolves to `false` once someone has completed a sign-in (recorded in `admin-users.json`) through a provider that is still configured, and `true` otherwise. Configuring a provider is not enough on its own, and removing every provider brings the token back. Exception: with no admin token set, outside Development, the token form is hidden as soon as a provider is configured, because it would accept any input. Set explicitly to override. |
 | `AdminAuth:Providers:<scheme>` | absent | `google` and `microsoft` are the recognized schemes. |
 
 #### Registering the redirect URI
@@ -877,6 +877,9 @@ sign-in has actually worked:
    page: sign back in with the token and fix the provider. Token login turns itself off after
    the first provider sign-in that passes the allow-list or the claim code, unless you override
    it on the same page.
+
+Replacing a provider counts as starting over: a sign-in recorded through a provider that has
+since been removed does not turn token login off.
 
 If token login is already off and a provider stops working, there are two ways back in, both
 needing access to the host: set `"AllowTokenLogin": true` in the `AdminAuth` section of

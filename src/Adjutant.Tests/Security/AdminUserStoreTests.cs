@@ -149,10 +149,21 @@ public class AdminUserStoreTests
     public void HasRecordedSignIn_IsFalseUntilASignInIsRecorded()
     {
         var store = CreateStore();
-        Assert.IsFalse(store.HasRecordedSignIn);
+        Assert.IsFalse(store.HasRecordedSignIn(["google"]));
 
         store.RecordSignIn("someone@example.com", "google", "sub-1");
-        Assert.IsTrue(store.HasRecordedSignIn);
+        Assert.IsTrue(store.HasRecordedSignIn(["google"]));
+    }
+
+    [TestMethod]
+    public void HasRecordedSignIn_CountsOnlyTheGivenProviders()
+    {
+        var store = CreateStore();
+        store.RecordSignIn("someone@example.com", "google", "sub-1");
+
+        Assert.IsFalse(store.HasRecordedSignIn(["microsoft"]), "a removed provider's sign-ins don't count");
+        Assert.IsFalse(store.HasRecordedSignIn([]), "nothing configured, nothing proven");
+        Assert.IsTrue(store.HasRecordedSignIn(["Microsoft", "GOOGLE"]), "scheme names ignore case");
     }
 
     [TestMethod]
@@ -162,7 +173,7 @@ public class AdminUserStoreTests
         // bring that back once a provider sign-in has worked.
         CreateStore().RecordSignIn("someone@example.com", "google", "sub-1");
 
-        Assert.IsTrue(CreateStore().HasRecordedSignIn);
+        Assert.IsTrue(CreateStore().HasRecordedSignIn(["google"]));
     }
 
     [TestMethod]

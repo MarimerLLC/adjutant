@@ -155,8 +155,8 @@ public class McpOAuthRulesTests
         Assert.IsTrue(OAuthAvailability.Evaluate(Server(), withProvider, development: false, oidcSignInRecorded: false));
         Assert.IsFalse(OAuthAvailability.Evaluate(Server(), noProvider, development: false, oidcSignInRecorded: false));
         Assert.IsTrue(OAuthAvailability.Evaluate(Server(), noProvider, development: true, oidcSignInRecorded: false), "Development can use the admin token");
-        Assert.IsFalse(OAuthAvailability.Evaluate(Server(), noProvider, development: true, oidcSignInRecorded: true),
-            "a recorded provider sign-in turns automatic token login off, provider since removed or not");
+        Assert.IsTrue(OAuthAvailability.Evaluate(Server(), noProvider, development: true, oidcSignInRecorded: true),
+            "with every provider removed, the admin token is the way in again");
         Assert.IsFalse(OAuthAvailability.Evaluate(Server(enableOAuth: false), withProvider, development: false, oidcSignInRecorded: false));
         Assert.IsFalse(OAuthAvailability.Evaluate(Server(requireApiKey: false), withProvider, development: false, oidcSignInRecorded: false));
     }

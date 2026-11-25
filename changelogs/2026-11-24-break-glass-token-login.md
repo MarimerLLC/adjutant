@@ -27,9 +27,18 @@ succeeded, and provider edits apply on the next sign-in without a restart.
 
 - `AdminAuthConfiguration.IsTokenLoginAllowed(bool oidcSignInRecorded)` resolves
   `AllowTokenLogin ?? !oidcSignInRecorded`. Explicit `true` and `false` still override.
-- `IAdminUserStore.HasRecordedSignIn` supplies the argument: true once `admin-users.json` holds a
-  user. Records are written only after the allow-list check or the claim code has passed, so this
-  means a provider is known to work end to end.
+- `IAdminUserStore.HasRecordedSignIn(providers)` supplies the argument: true once
+  `admin-users.json` holds a user who signed in through one of the currently configured
+  providers. Records are written only after the allow-list check or the claim code has passed,
+  so this means one of those providers is known to work end to end. A sign-in through a provider
+  that has since been removed doesn't count, and with no provider configured the token is always
+  offered.
+- With no admin token configured, outside Development, the login form accepts any input. There
+  the 2.0.0 rule still applies (`AdminAuthConfiguration.IsTokenFormOffered`): the form is hidden
+  as soon as a provider is configured.
+- The sign-in endpoint redirects to the login page with `error=provider` instead of returning a
+  500 when the provider's options are inert (for example a client secret that no longer
+  decrypts) or when discovery fails during the challenge (a mistyped Authority).
 - Every caller passes it: the login page, the Settings page, the session policy (a token session
   now ends after the first provider sign-in rather than when a provider is saved), the startup log
   and MCP OAuth availability in Development.
