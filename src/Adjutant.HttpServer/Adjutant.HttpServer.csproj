@@ -4,6 +4,10 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- blazor.web.js ships in a package that restore only adds when it sees .razor files. The
+         Dockerfile restores from the .csproj alone (for layer caching), so without this the
+         image has no blazor.web.js and no admin console page is interactive. -->
+    <RequiresAspNetWebAssets>true</RequiresAspNetWebAssets>
   </PropertyGroup>
 
   <ItemGroup>

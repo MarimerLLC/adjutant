@@ -30,3 +30,19 @@ jobs:
 
       - name: Run tests
         run: dotnet test adjutant.slnx --configuration Release --no-build --verbosity normal
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t adjutant:ci .
+
+      # The Dockerfile restores before copying the .razor files. If the Blazor script goes
+      # missing from that restore, the admin console renders but nothing on it is interactive.
+      - name: Check the image serves the Blazor script
+        run: docker run --rm --entrypoint test adjutant:ci -f /app/wwwroot/_framework/blazor.web.js
