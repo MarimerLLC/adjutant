@@ -33,12 +33,17 @@ See [Public access](PUBLIC-ACCESS.md) for exposing the server.
 ### Admin token
 
 - **Never absent.** With no `ADJUTANT_ADMIN_TOKEN` / `Adjutant:AdminToken`, the server generates
-  a token at first start and prints it once in the startup log, so a fresh install's admin API
+  a token at first start and prints it once to standard output, so a fresh install's admin API
   and console login are never open. A missing token matches nothing; there is no
   "unprotected" mode.
-- **Hashed at rest.** Only the generated token's SHA-256 is written, to `admin-token.json`.
-  Delete the file and restart to get a new one.
-- **Configured wins.** A configured token replaces the generated one, which then stops working.
+- **Hashed at rest, and kept out of log files.** Only the generated token's SHA-256 is written, to
+  `admin-token.json`. The banner's secret line goes to standard output only, never to
+  `{data}/logs` or an OTLP exporter; the first-start MCP API key is handled the same way. Delete
+  the file and restart to get a new token.
+- **Configured wins.** A configured token replaces the generated one. The next start deletes
+  `admin-token.json`, so the generated token can't come back if the configured one is removed.
+- **Sessions follow the token.** A console session opened with the token carries a fingerprint of
+  that token, checked on every request. Replacing the token ends those sessions.
 - **Fixed-time comparison** of SHA-256 digests, shared by the REST API and the login page, so
   neither the token's characters nor its length show in response times.
 

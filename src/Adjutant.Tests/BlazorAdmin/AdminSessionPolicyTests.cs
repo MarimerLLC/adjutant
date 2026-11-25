@@ -76,6 +76,54 @@ public class AdminSessionPolicyTests
         return config;
     }
 
+    private static ClaimsPrincipal TokenUser(string? fingerprint) =>
+        new(new ClaimsIdentity(
+            new[]
+            {
+                new Claim(ClaimTypes.Name, "admin"),
+                new Claim(AdminOidc.ProviderClaimType, AdminSessionPolicy.TokenProvider)
+            }.Concat(fingerprint is null ? [] : [new Claim(AdminSessionPolicy.TokenFingerprintClaimType, fingerprint)]),
+            "TestAuth"));
+
+    private AdminTokenStore Tokens(string? configured) =>
+        new(NullLogger<AdminTokenStore>.Instance, () => configured, Path.Combine(_directory, AdminTokenStore.FileName));
+
+    [TestMethod]
+    public void ATokenSessionLastsOnlyAsLongAsTheTokenItWasOpenedWith()
+    {
+        string? configured = "first-token";
+        var tokens = new AdminTokenStore(NullLogger<AdminTokenStore>.Instance, () => configured,
+            Path.Combine(_directory, AdminTokenStore.FileName));
+        var session = TokenUser(tokens.Fingerprint);
+
+        Assert.AreEqual(AdminSessionPolicy.Reason.None, AdminSessionPolicy.Evaluate(session, Config(), _users, tokens));
+
+        configured = "rotated-token";
+        Assert.AreEqual(AdminSessionPolicy.Reason.TokenChanged, AdminSessionPolicy.Evaluate(session, Config(), _users, tokens));
+    }
+
+    [TestMethod]
+    public void ATokenSessionWithoutABindingEnds()
+    {
+        // A session from before the binding existed, including one opened when a server with no
+        // token accepted any input.
+        Assert.AreEqual(AdminSessionPolicy.Reason.TokenChanged,
+            AdminSessionPolicy.Evaluate(TokenUser(fingerprint: null), Config(), _users, Tokens("some-token")));
+        Assert.AreEqual(AdminSessionPolicy.Reason.TokenChanged,
+            AdminSessionPolicy.Evaluate(TokenUser(fingerprint: ""), Config(), _users, Tokens(null)),
+            "with no token at all, nothing is bound");
+    }
+
+    [TestMethod]
+    public void TokenLoginTurningOffStillTakesPrecedence()
+    {
+        var tokens = Tokens("t");
+        _users.RecordSignIn("someone@example.com", "google", "sub-1");
+
+        Assert.AreEqual(AdminSessionPolicy.Reason.TokenLoginDisabled,
+            AdminSessionPolicy.Evaluate(TokenUser(tokens.Fingerprint), Config(withProvider: true), _users, tokens));
+    }
+
     [TestMethod]
     public void AnAllowedUserKeepsTheirSession()
     {

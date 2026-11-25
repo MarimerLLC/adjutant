@@ -893,9 +893,15 @@ Copy it now - it is hashed at rest and will never be shown again.
 ====================================================================
 ```
 
-With Docker, read it with `docker compose logs adjutant`; on Kubernetes, `kubectl logs`. If you
-lose it, delete `admin-token.json` from the data directory and restart for a new one, or set
-`ADJUTANT_ADMIN_TOKEN`. There is no mode that runs the admin API without a token.
+The token line goes to standard output only. With Docker, read it with
+`docker compose logs adjutant`; on Kubernetes, `kubectl logs`. It is not written to the log files
+in `{data}/logs` or sent to an OpenTelemetry exporter; those show a placeholder.
+
+If you lose it, delete `admin-token.json` from the data directory and restart for a new one, or set
+`ADJUTANT_ADMIN_TOKEN`. Either way, console sessions opened with the old token end. Setting a
+token also deletes `admin-token.json` at the next start. If you later remove the configured token,
+restart: a new token is generated only at startup, and until then the admin API accepts none.
+There is no mode that runs the admin API without a token.
 
 #### Bootstrapping with no provider yet
 

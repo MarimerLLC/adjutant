@@ -143,7 +143,8 @@ public class Program
             var configuration = sp.GetRequiredService<IConfiguration>();
             return new AdminTokenStore(
                 sp.GetRequiredService<ILogger<AdminTokenStore>>(),
-                () => LegacyNames.GetEnvironmentVariable("ADMIN_TOKEN") is { Length: > 0 } fromEnvironment
+                () => LegacyNames.GetEnvironmentVariable("ADMIN_TOKEN") is { } fromEnvironment
+                      && !string.IsNullOrWhiteSpace(fromEnvironment)
                     ? fromEnvironment
                     : configuration.GetValue<string>("Adjutant:AdminToken"));
         });

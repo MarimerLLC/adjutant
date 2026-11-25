@@ -131,13 +131,33 @@ internal sealed partial class AdjutantApp : WebApplicationFactory<Adjutant.HttpS
             {
                 var email = context.Request.Query["email"].ToString();
                 var provider = context.Request.Query["provider"].ToString() is { Length: > 0 } p ? p : AdminOidc.GoogleScheme;
-                var principal = provider == AdminSessionPolicy.TokenProvider
-                    ? new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(
-                        [
-                            new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, "admin"),
-                            new System.Security.Claims.Claim(AdminOidc.ProviderClaimType, AdminSessionPolicy.TokenProvider)
-                        ], CookieAuthenticationDefaults.AuthenticationScheme))
-                    : AdminSignInProcessor.BuildAdminPrincipal(email, provider, "subject-" + email);
+                System.Security.Claims.ClaimsPrincipal principal;
+                if (provider == AdminSessionPolicy.TokenProvider)
+                {
+                    var claims = new List<System.Security.Claims.Claim>
+                    {
+                        new(System.Security.Claims.ClaimTypes.Name, "admin"),
+                        new(AdminOidc.ProviderClaimType, AdminSessionPolicy.TokenProvider)
+                    };
+
+                    // ?fingerprint=none leaves the binding out, as a session from before it existed;
+                    // any other value is used as given; omitted, the current token's is used.
+                    var fingerprint = context.Request.Query["fingerprint"].ToString() switch
+                    {
+                        "" => context.RequestServices.GetRequiredService<Adjutant.Core.Security.IAdminTokenStore>().Fingerprint,
+                        "none" => null,
+                        var given => given
+                    };
+                    if (fingerprint is not null)
+                        claims.Add(new(AdminSessionPolicy.TokenFingerprintClaimType, fingerprint));
+
+                    principal = new System.Security.Claims.ClaimsPrincipal(
+                        new System.Security.Claims.ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme));
+                }
+                else
+                {
+                    principal = AdminSignInProcessor.BuildAdminPrincipal(email, provider, "subject-" + email);
+                }
                 await context.SignInAsync(CookieAuthenticationDefaults.AuthenticationScheme, principal);
                 context.Response.Redirect(LocalReturnUrl.Sanitize(context.Request.Query["returnUrl"]));
             }));

@@ -44,7 +44,7 @@ public static class McpSecurityStartup
         logger.LogWarning("========================================================================");
         logger.LogWarning("No MCP API key was configured, so one has been generated for you.");
         logger.LogWarning("Copy it now - it is hashed at rest and will never be shown again.");
-        logger.LogWarning("    MCP API key: {Secret}", secret);
+        StartupSecrets.Show(logger, Console.Out, "MCP API key", secret);
         logger.LogWarning("    Key id:      {KeyId}", key.Id);
         logger.LogWarning(
             "Send it as 'Authorization: Bearer <key>' or the '{Header}' header.",

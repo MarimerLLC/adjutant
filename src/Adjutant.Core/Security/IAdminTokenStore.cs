@@ -24,4 +24,12 @@ public interface IAdminTokenStore
 
     /// <summary>Fixed-time check of a presented token. False when no token exists.</summary>
     bool Matches(string? presented);
+
+    /// <summary>
+    /// A value derived from the token now in effect, stored in a console session established
+    /// with it. It changes whenever the token does, which is how replacing the token ends the
+    /// sessions opened with the old one. Null when no token exists. It reveals nothing usable
+    /// about the token itself.
+    /// </summary>
+    string? Fingerprint { get; }
 }

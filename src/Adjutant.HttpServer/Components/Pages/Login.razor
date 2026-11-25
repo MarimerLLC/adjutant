@@ -163,7 +163,9 @@
         {
             new(ClaimTypes.Name, "admin"),
             new(ClaimTypes.Role, "Administrator"),
-            new(AdminOidc.ProviderClaimType, "token")
+            new(AdminOidc.ProviderClaimType, AdminSessionPolicy.TokenProvider),
+            // Binds the session to this token: replacing the token ends it (AdminSessionPolicy).
+            new(AdminSessionPolicy.TokenFingerprintClaimType, AdminTokens.Fingerprint ?? "")
         };
 
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
