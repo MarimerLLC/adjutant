@@ -24,6 +24,12 @@ Side effect: the shipped `Kestrel` endpoint (`http://+:8080`) now stays in effec
 operator's file appears. Before, it silently dropped out on the second start. The Docker image sets
 `ASPNETCORE_URLS=http://+:8080` as well, so the listening port doesn't change.
 
+A Kestrel endpoint takes precedence over `ASPNETCORE_URLS`, which therefore no longer changes the
+port on any start; before, it applied from the second start on. Change the port with
+`Kestrel:Endpoints:Http:Url` in the data-directory file, or with
+`ADJUTANT_Kestrel__Endpoints__Http__Url`. A manual run confirmed `ASPNETCORE_URLS` is overridden.
+No shipped deployment sets it to anything but 8080.
+
 ## Tests
 
 `FirstRunConfigurationTests`: an account written through `IAccountConfigurationService` on a fresh
