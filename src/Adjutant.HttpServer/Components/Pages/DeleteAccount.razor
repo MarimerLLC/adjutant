@@ -3,6 +3,7 @@
 @attribute [Authorize]
 @using Adjutant.Auth
 @using Adjutant.Core.Models
+@using Adjutant.Core.Services
 @inject IAccountConfigurationService ConfigService
 @inject NavigationManager Navigation
 
@@ -49,6 +50,16 @@ else if (_account is not null)
         </div>
     </div>
 
+    @if (_borrowers.Count > 0)
+    {
+        <div class="alert alert-warning">
+            <i class="bi bi-exclamation-triangle me-1"></i>
+            These accounts use this account's credentials for OneDrive and will stop working once it is deleted:
+            <strong>@string.Join(", ", _borrowers.Select(b => b.Id))</strong>.
+            To keep them working, point their Auth Account at another account first.
+        </div>
+    }
+
     <div class="form-check mb-4">
         <input class="form-check-input" type="checkbox" id="clearCreds" @bind="_clearCredentials" />
         <label class="form-check-label" for="clearCreds">
@@ -88,6 +99,7 @@ else if (_account is not null)
     private bool _loading = true;
     private string? _error;
     private bool _clearCredentials;
+    private IReadOnlyList<AccountInfo> _borrowers = [];
     private bool _deleting;
 
     protected override async Task OnInitializedAsync()
@@ -105,6 +117,11 @@ else if (_account is not null)
             if (_account is null)
             {
                 _error = $"Account '{AccountId}' not found.";
+            }
+            else
+            {
+                var all = await ConfigService.GetAllAccountsFromConfigAsync();
+                _borrowers = CredentialDelegation.FindBorrowers(all, AccountId);
             }
         }
         catch (Exception ex)

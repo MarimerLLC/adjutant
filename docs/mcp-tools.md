@@ -83,6 +83,10 @@ Smart routing (`send_email`, `create_event`, `create_contact`, `delete_event`,
 A **disabled** account can't be used by any tool. Naming it with `accountId` fails with
 `Account '<id>' is disabled. ...`; in a `bulk_*` tool only the items on that account fail. It is
 also left out of `list_accounts` (unless `includeDisabled` is true), every fan-out and smart routing.
+Its credentials are switched off too: a JSON calendar on OneDrive that borrows them through
+`authAccountId` can't read its files while the account is disabled. Its reads fail with
+`Account '<json-id>' gets its OneDrive credentials from '<id>', which is disabled. ...`, which a
+fan-out reports as that JSON account's `warnings` entry.
 
 `bulk_*` tools check per item, so one scoped-out account fails only its own entries rather than
 the whole batch.

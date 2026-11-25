@@ -265,9 +265,17 @@ else
                             <option value="">-- New credentials --</option>
                             @foreach (var acct in _microsoftAccounts)
                             {
-                                <option value="@acct.Id">@acct.DisplayName (@acct.Provider)</option>
+                                <option value="@acct.Id">@acct.DisplayName (@acct.Provider)@(acct.Enabled ? "" : " (disabled)")</option>
                             }
                         </InputSelect>
+                        @if (_microsoftAccounts.FirstOrDefault(a => a.Id == _model.AuthAccountId) is { Enabled: false } lender)
+                        {
+                            <div class="form-text text-warning">
+                                <i class="bi bi-exclamation-triangle me-1"></i>
+                                '@lender.Id' is disabled, so this account can't read its OneDrive files until
+                                '@lender.Id' is re-enabled.
+                            </div>
+                        }
                     </div>
                     @if (string.IsNullOrWhiteSpace(_model.AuthAccountId))
                     {

@@ -30,18 +30,8 @@ public static partial class AccountValidation
     /// For JSON accounts that delegate auth to another account (via authAccountId),
     /// returns that account ID. Returns null for all other cases.
     /// </summary>
-    public static string? GetAuthDelegateAccountId(AccountInfo account)
-    {
-        if (!account.Provider.Equals("json", StringComparison.OrdinalIgnoreCase))
-            return null;
-
-        var source = GetConfigValueCaseInsensitive(account.ProviderConfig, "source");
-        if (!source.Equals("onedrive", StringComparison.OrdinalIgnoreCase))
-            return null;
-
-        var authAccountId = GetConfigValueCaseInsensitive(account.ProviderConfig, "authAccountId");
-        return string.IsNullOrWhiteSpace(authAccountId) ? null : authAccountId;
-    }
+    public static string? GetAuthDelegateAccountId(AccountInfo account) =>
+        Adjutant.Core.Services.CredentialDelegation.GetLenderId(account);
 
     private static bool RequiresJsonAuthentication(Dictionary<string, string> config)
     {

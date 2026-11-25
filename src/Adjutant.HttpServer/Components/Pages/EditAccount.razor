@@ -4,6 +4,7 @@
 @using Adjutant.Auth
 @using Adjutant.Core.Models
 @using Adjutant.Core.Security
+@using Adjutant.Core.Services
 @using Adjutant.HttpServer.BlazorAdmin
 @inject IAccountConfigurationService ConfigService
 @inject NavigationManager Navigation
@@ -144,9 +145,17 @@ else if (_model is not null)
                             <option value="">-- New credentials --</option>
                             @foreach (var acct in _microsoftAccounts)
                             {
-                                <option value="@acct.Id">@acct.DisplayName (@acct.Provider)</option>
+                                <option value="@acct.Id">@acct.DisplayName (@acct.Provider)@(acct.Enabled ? "" : " (disabled)")</option>
                             }
                         </InputSelect>
+                        @if (_microsoftAccounts.FirstOrDefault(a => a.Id == _model.AuthAccountId) is { Enabled: false } lender)
+                        {
+                            <div class="form-text text-warning">
+                                <i class="bi bi-exclamation-triangle me-1"></i>
+                                '@lender.Id' is disabled, so this account can't read its OneDrive files.
+                                Re-enable '@lender.Id' or pick another account.
+                            </div>
+                        }
                     </div>
                     @if (string.IsNullOrWhiteSpace(_model.AuthAccountId))
                     {
@@ -329,6 +338,17 @@ else if (_model is not null)
             </div>
         </div>
 
+        @if (!_model.Enabled && _borrowers.Count > 0)
+        {
+            <div class="alert alert-warning">
+                <i class="bi bi-exclamation-triangle me-1"></i>
+                These accounts use this account's credentials for OneDrive and can't read their files
+                while it is disabled:
+                <strong>@string.Join(", ", _borrowers.Select(b => b.Id))</strong>.
+                To keep them working, point their Auth Account at another account first.
+            </div>
+        }
+
         <div class="d-flex gap-2">
             <button type="submit" class="btn btn-primary" disabled="@_submitting">
                 @if (_submitting)
@@ -364,6 +384,7 @@ else if (_model is not null)
     private bool _success;
     private bool _submitting;
     private List<AccountInfo> _microsoftAccounts = [];
+    private IReadOnlyList<AccountInfo> _borrowers = [];
 
     protected override async Task OnInitializedAsync()
     {
@@ -405,6 +426,7 @@ else if (_model is not null)
             _microsoftAccounts = all
                 .Where(a => a.Provider is "microsoft365" or "outlook.com")
                 .ToList();
+            _borrowers = CredentialDelegation.FindBorrowers(all, AccountId!);
         }
         catch
         {

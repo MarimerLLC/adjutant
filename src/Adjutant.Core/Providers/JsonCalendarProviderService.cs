@@ -72,6 +72,8 @@ public class JsonCalendarProviderService : IJsonCalendarProviderService
         if (account == null)
             throw new ProviderOperationException($"Account '{accountId}' not found in registry.");
 
+        await EnsureLenderUsableAsync(account);
+
         var cacheTtl = GetCacheTtl(account);
 
         // Check cache
@@ -113,6 +115,14 @@ public class JsonCalendarProviderService : IJsonCalendarProviderService
             throw;
         }
     }
+
+    /// <summary>
+    /// Refuses the read when the account borrows credentials it may no longer use (the lender
+    /// is missing or disabled). Runs before the cache, so data fetched with the lender's token
+    /// before it was disabled is not served afterwards, fresh or as a stale fallback.
+    /// </summary>
+    private Task EnsureLenderUsableAsync(AccountInfo account) =>
+        CredentialDelegation.ResolveLenderAsync(_accountRegistry, account);
 
     private async Task<string> LoadJsonContentAsync(AccountInfo account, CancellationToken cancellationToken)
     {
@@ -170,15 +180,12 @@ public class JsonCalendarProviderService : IJsonCalendarProviderService
         string? refAccountId = null;
         var isReusedCredentials = false;
 
-        if (account.ProviderConfig.TryGetValue("authAccountId", out refAccountId))
+        // Throws before any token is requested when the lender is missing or disabled.
+        var refAccount = await CredentialDelegation.ResolveLenderAsync(_accountRegistry, account);
+        if (refAccount is not null)
         {
             isReusedCredentials = true;
-            var refAccount = await _accountRegistry.GetAccountAsync(refAccountId);
-            if (refAccount == null)
-                throw new ProviderOperationException(
-                    $"Account '{account.Id}' references auth account '{refAccountId}' which was not found. " +
-                    "Check the 'authAccountId' in providerConfig.");
-
+            refAccountId = refAccount.Id;
             refAccount.ProviderConfig.TryGetValue("clientId", out clientId);
             refAccount.ProviderConfig.TryGetValue("tenantId", out tenantId);
             authAccountId = refAccountId;
@@ -325,6 +332,8 @@ public class JsonCalendarProviderService : IJsonCalendarProviderService
         var account = await _accountRegistry.GetAccountAsync(accountId);
         if (account == null)
             return [];
+
+        await EnsureLenderUsableAsync(account);
 
         var cacheTtl = GetCacheTtl(account);
 
@@ -512,6 +521,8 @@ public class JsonCalendarProviderService : IJsonCalendarProviderService
         var account = await _accountRegistry.GetAccountAsync(accountId);
         if (account == null)
             return [];
+
+        await EnsureLenderUsableAsync(account);
 
         var cacheTtl = GetCacheTtl(account);
 
