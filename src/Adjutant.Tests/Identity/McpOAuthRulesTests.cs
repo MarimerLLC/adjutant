@@ -152,11 +152,13 @@ public class McpOAuthRulesTests
         var withProvider = AdminAuth(providers: true);
         var noProvider = AdminAuth(providers: false);
 
-        Assert.IsTrue(OAuthAvailability.Evaluate(Server(), withProvider, development: false));
-        Assert.IsFalse(OAuthAvailability.Evaluate(Server(), noProvider, development: false));
-        Assert.IsTrue(OAuthAvailability.Evaluate(Server(), noProvider, development: true), "Development can use the admin token");
-        Assert.IsFalse(OAuthAvailability.Evaluate(Server(enableOAuth: false), withProvider, development: false));
-        Assert.IsFalse(OAuthAvailability.Evaluate(Server(requireApiKey: false), withProvider, development: false));
+        Assert.IsTrue(OAuthAvailability.Evaluate(Server(), withProvider, development: false, oidcSignInRecorded: false));
+        Assert.IsFalse(OAuthAvailability.Evaluate(Server(), noProvider, development: false, oidcSignInRecorded: false));
+        Assert.IsTrue(OAuthAvailability.Evaluate(Server(), noProvider, development: true, oidcSignInRecorded: false), "Development can use the admin token");
+        Assert.IsFalse(OAuthAvailability.Evaluate(Server(), noProvider, development: true, oidcSignInRecorded: true),
+            "a recorded provider sign-in turns automatic token login off, provider since removed or not");
+        Assert.IsFalse(OAuthAvailability.Evaluate(Server(enableOAuth: false), withProvider, development: false, oidcSignInRecorded: false));
+        Assert.IsFalse(OAuthAvailability.Evaluate(Server(requireApiKey: false), withProvider, development: false, oidcSignInRecorded: false));
     }
 
     // --- Who can approve, and whose tokens stay valid ---
@@ -196,8 +198,12 @@ public class McpOAuthRulesTests
 
         Assert.IsTrue(RequireOwnerStillAllowed.IsStillAllowed(token, true, AdminAuth(providers: false), users, development: true));
         Assert.IsFalse(RequireOwnerStillAllowed.IsStillAllowed(token, true, AdminAuth(providers: false), users, development: false));
+        Assert.IsTrue(RequireOwnerStillAllowed.IsStillAllowed(token, true, AdminAuth(providers: true), users, development: true),
+            "configuring a provider no longer ends token login on its own (#125)");
+
+        users.RecordSignIn("owner@example.com", "google", "sub-1");
         Assert.IsFalse(RequireOwnerStillAllowed.IsStillAllowed(token, true, AdminAuth(providers: true), users, development: true),
-            "configuring a provider ends token login, and with it these approvals");
+            "the first successful provider sign-in ends token login, and with it these approvals");
     }
 
     // --- Signing keys ---

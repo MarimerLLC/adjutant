@@ -24,12 +24,13 @@ public static class AdminAuthStartup
         else
             logger.LogInformation("No admin console sign-in providers are configured.");
 
-        if (config.IsTokenLoginAllowed())
+        var users = app.Services.GetRequiredService<IAdminUserStore>();
+        if (config.IsTokenLoginAllowed(users.HasRecordedSignIn))
         {
             logger.LogWarning(
                 "Admin token login is enabled on the console login page. It is the break-glass path " +
-                "and resolves off automatically once a sign-in provider is configured; set " +
-                "AdminAuth:AllowTokenLogin explicitly to override.");
+                "and resolves off automatically after the first successful sign-in with a provider; " +
+                "set AdminAuth:AllowTokenLogin explicitly to override.");
         }
 
         if (config.AllowedEmails.Count > 0)

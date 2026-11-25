@@ -258,8 +258,10 @@ public class AdminAuthConfigurationServiceTests
         await service.SetProviderAsync("google", "https://accounts.google.com", "cid", "secret");
         await service.SetAllowTokenLoginAsync(null);
 
-        // A provider is configured, so automatic resolution means token login is off.
-        Assert.IsFalse(BindAdminAuth().IsTokenLoginAllowed());
+        // Automatic resolution follows whether a provider sign-in has worked, not whether a
+        // provider is configured (#125).
+        Assert.IsTrue(BindAdminAuth().IsTokenLoginAllowed(oidcSignInRecorded: false));
+        Assert.IsFalse(BindAdminAuth().IsTokenLoginAllowed(oidcSignInRecorded: true));
     }
 
     [TestMethod]

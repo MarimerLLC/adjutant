@@ -8,6 +8,13 @@ public interface IAdminUserStore
     /// <summary>All known users, ordered by email.</summary>
     IReadOnlyList<AdminUser> List();
 
+    /// <summary>
+    /// True once any OIDC admin sign-in has been recorded. Records are written only after the
+    /// allow-list check or the claim code has passed, so this means a provider is known to work
+    /// end to end, which is when the break-glass token login can safely turn itself off.
+    /// </summary>
+    bool HasRecordedSignIn { get; }
+
     /// <summary>Looks up a user by email, or null when the address is unknown.</summary>
     AdminUser? Find(string? email);
 

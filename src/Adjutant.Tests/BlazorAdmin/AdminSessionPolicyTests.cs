@@ -145,21 +145,43 @@ public class AdminSessionPolicyTests
     }
 
     [TestMethod]
-    public void ATokenSessionEndsOnceAProviderIsConfigured()
+    public void ATokenSessionSurvivesAProviderThatHasNotWorkedYet()
     {
-        // AllowTokenLogin resolves to false the moment a provider appears, so a break-glass
-        // session should not stay open for the rest of the cookie's life.
+        // Configuring a provider is not proof that it works. Ending the token session here
+        // would lock the operator out of the console they need to fix a misconfigured one (#125).
+        Assert.AreEqual(
+            AdminSessionPolicy.Reason.None,
+            AdminSessionPolicy.Evaluate(TokenUser(), Config(withProvider: true), _users));
+    }
+
+    [TestMethod]
+    public void ATokenSessionEndsAfterTheFirstSuccessfulProviderSignIn()
+    {
+        // AllowTokenLogin resolves to false once a provider sign-in has been recorded, so a
+        // break-glass session should not stay open for the rest of the cookie's life.
+        _users.RecordSignIn("someone@example.com", "google", "sub-1");
+
         Assert.AreEqual(
             AdminSessionPolicy.Reason.TokenLoginDisabled,
-            AdminSessionPolicy.Evaluate(TokenUser(), Config(withProvider: true), _users));
+            AdminSessionPolicy.Evaluate(TokenUser(), Config(["someone@example.com"], withProvider: true), _users));
     }
 
     [TestMethod]
     public void ATokenSessionSurvivesAnExplicitOverride()
     {
+        _users.RecordSignIn("someone@example.com", "google", "sub-1");
+
         Assert.AreEqual(
             AdminSessionPolicy.Reason.None,
             AdminSessionPolicy.Evaluate(TokenUser(), Config(allowTokenLogin: true, withProvider: true), _users));
+    }
+
+    [TestMethod]
+    public void ATokenSessionEndsWhenTurnedOffBeforeAnyProviderSignIn()
+    {
+        Assert.AreEqual(
+            AdminSessionPolicy.Reason.TokenLoginDisabled,
+            AdminSessionPolicy.Evaluate(TokenUser(), Config(allowTokenLogin: false, withProvider: true), _users));
     }
 
     [TestMethod]

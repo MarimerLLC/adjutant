@@ -34,11 +34,11 @@ public static class AdminSessionPolicy
         if (user?.Identity?.IsAuthenticated != true)
             return Reason.NotAuthenticated;
 
-        // A token session is valid exactly as long as token login is. Configuring a provider
-        // flips AllowTokenLogin off, which should also end sessions established that way rather
-        // than leaving a break-glass login open for the rest of the cookie's life.
+        // A token session is valid exactly as long as token login is. The first successful
+        // provider sign-in flips AllowTokenLogin off, which should also end sessions established
+        // that way rather than leaving a break-glass login open for the rest of the cookie's life.
         if (user.FindFirst(AdminOidc.ProviderClaimType)?.Value == TokenProvider)
-            return config.IsTokenLoginAllowed() ? Reason.None : Reason.TokenLoginDisabled;
+            return config.IsTokenLoginAllowed(users.HasRecordedSignIn) ? Reason.None : Reason.TokenLoginDisabled;
 
         var email = user.FindFirst(ClaimTypes.Email)?.Value;
         if (!AdminEmailAllowList.IsAllowed(email, config.AllowedEmails))

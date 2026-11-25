@@ -816,7 +816,7 @@ matches every address in that domain. Matching ignores case and surrounding whit
 | Setting | Default | Effect |
 |---|---|---|
 | `AdminAuth:AllowedEmails` | empty | Who may sign in. Empty means unclaimed — see below. |
-| `AdminAuth:AllowTokenLogin` | `null` | `null` resolves to `true` while no provider is configured and `false` once one is. Set explicitly to override. |
+| `AdminAuth:AllowTokenLogin` | `null` | `null` resolves to `true` until someone completes a provider sign-in (recorded in `admin-users.json`), and `false` from then on. Configuring a provider is not enough on its own. Set explicitly to override. |
 | `AdminAuth:Providers:<scheme>` | absent | `google` and `microsoft` are the recognized schemes. |
 
 #### Registering the redirect URI
@@ -855,8 +855,8 @@ Sign in with a provider, then enter this code to claim the server:
 
 Sign in with a provider; because no allow-list exists yet, you are sent to a claim page instead
 of the console. Entering the code adds your verified address to `AllowedEmails`, records you in
-`admin-users.json`, and signs you in. The code is then spent, and `AllowTokenLogin` resolves to
-`false` on the next page load if a provider is configured.
+`admin-users.json`, and signs you in. The code is then spent. Because a provider sign-in has now
+been recorded, `AllowTokenLogin` resolves to `false` from then on, and any open token session ends.
 
 The code on its own grants nothing — it is only accepted alongside an identity a provider has
 already verified. Codes are case-insensitive and the dashes are optional.
@@ -864,16 +864,24 @@ already verified. Codes are case-insensitive and the dashes are optional.
 #### Bootstrapping with no provider yet
 
 There is a chicken-and-egg problem: configuring a provider through the console requires signing
-in. The admin token is the way through it, and it is available as a login precisely while no
-provider is configured:
+in. The admin token is the way through it, and it is available as a login until a provider
+sign-in has actually worked:
 
 1. Start the server with `ADJUTANT_ADMIN_TOKEN` set and sign in with it.
 2. Go to **Settings → Sign-in providers**. The page shows the exact redirect URI to register
    with the provider, built from `ExternalBaseUrl`.
 3. Paste in the Authority, Client ID, and Client secret, and save. It takes effect immediately —
    no restart.
-4. Sign out and sign in with the provider. Token login turns itself off once a provider is
-   configured, unless you override it on the same page.
+4. Sign out and sign in with the provider. If the provider is misconfigured (for example the
+   client secret's ID was pasted instead of its value), the token field is still on the login
+   page: sign back in with the token and fix the provider. Token login turns itself off after
+   the first provider sign-in that passes the allow-list or the claim code, unless you override
+   it on the same page.
+
+If token login is already off and a provider stops working, there are two ways back in, both
+needing access to the host: set `"AllowTokenLogin": true` in the `AdminAuth` section of
+`appsettings.json` and restart, or delete `admin-users.json` from the data directory and
+restart. Deleting `admin-users.json` also clears every administrator's subject binding.
 
 `AdminAuth:Providers` can equally be set by editing `appsettings.json` or via environment
 variables (`ADJUTANT_AdminAuth__Providers__google__ClientId=...`); the console writes the

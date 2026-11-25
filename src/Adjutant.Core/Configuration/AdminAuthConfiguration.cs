@@ -17,10 +17,11 @@ public class AdminAuthConfiguration
     /// <summary>
     /// Whether the admin token may be used as a password on the console login page.
     ///
-    /// Null (the default) resolves to true while no OIDC provider is configured and false once
-    /// one is, so the break-glass path exists exactly while it is needed. Set explicitly to
-    /// override — <c>true</c> to keep it after configuring a provider, <c>false</c> to remove
-    /// it before configuring one.
+    /// Null (the default) resolves to true until the server has recorded a successful OIDC admin
+    /// sign-in, and false from then on. Configuring a provider is not enough: a provider saved
+    /// with a mistake would otherwise remove the only way back into the console to fix it. Set
+    /// explicitly to override — <c>true</c> to keep it after a provider sign-in has worked,
+    /// <c>false</c> to remove it before one has.
     /// </summary>
     public bool? AllowTokenLogin { get; set; }
 
@@ -40,11 +41,15 @@ public class AdminAuthConfiguration
         Providers.Where(p => p.Value.IsConfigured).Select(p => p.Key);
 
     /// <summary>
-    /// Resolves the tri-state <see cref="AllowTokenLogin"/> against whether any provider is
-    /// configured.
+    /// Resolves the tri-state <see cref="AllowTokenLogin"/>.
     /// </summary>
-    public bool IsTokenLoginAllowed() =>
-        AllowTokenLogin ?? !ConfiguredProviderSchemes().Any();
+    /// <param name="oidcSignInRecorded">
+    /// Whether anyone has completed an OIDC admin sign-in that passed the allow-list or the claim
+    /// code, i.e. <c>IAdminUserStore.HasRecordedSignIn</c>. With no provider configured this is
+    /// necessarily false, so the token is still the way in on a fresh server.
+    /// </param>
+    public bool IsTokenLoginAllowed(bool oidcSignInRecorded) =>
+        AllowTokenLogin ?? !oidcSignInRecorded;
 }
 
 /// <summary>

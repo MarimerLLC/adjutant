@@ -5,12 +5,14 @@
 @using System.Security.Cryptography
 @using System.Text
 @using Adjutant.Core.Configuration
+@using Adjutant.Core.Security
 @using Adjutant.HttpServer.BlazorAdmin
 @using Microsoft.AspNetCore.Authentication
 @using Microsoft.AspNetCore.Authentication.Cookies
 @using Microsoft.Extensions.Options
 @inject IConfiguration Configuration
 @inject IOptionsMonitor<AdminAuthConfiguration> AdminAuth
+@inject IAdminUserStore AdminUsers
 @inject NavigationManager Navigation
 @inject IHttpContextAccessor HttpContextAccessor
 
@@ -96,7 +98,7 @@
 
         var config = AdminAuth.CurrentValue;
         _providers = config.ConfiguredProviderSchemes().ToList();
-        _tokenLoginAllowed = config.IsTokenLoginAllowed();
+        _tokenLoginAllowed = config.IsTokenLoginAllowed(AdminUsers.HasRecordedSignIn);
 
         _errorMessage = Error switch
         {
@@ -109,6 +111,11 @@
             "unclaimable" => "This server has no allow-list and no claim code is outstanding. Restart it to issue one.",
             "unconfigured" => "That sign-in provider is not configured.",
             "unknownprovider" => "Unknown sign-in provider.",
+            // Without the token field there is no way into the console to fix a provider that
+            // has stopped working, so name the setting that brings it back.
+            "provider" when !_tokenLoginAllowed =>
+                "Sign-in failed at the identity provider. If the provider is misconfigured, set " +
+                "AdminAuth:AllowTokenLogin to true in appsettings.json and restart to sign in with the admin token.",
             "provider" => "Sign-in failed at the identity provider. Please try again.",
             "claimexpired" => "That sign-in attempt expired. Please sign in again.",
             _ => "Sign-in failed. Please try again."
@@ -120,7 +127,7 @@
         var httpContext = HttpContextAccessor.HttpContext;
         if (httpContext is null) return;
 
-        if (!AdminAuth.CurrentValue.IsTokenLoginAllowed())
+        if (!AdminAuth.CurrentValue.IsTokenLoginAllowed(AdminUsers.HasRecordedSignIn))
         {
             _errorMessage = "Token login is disabled on this server.";
             return;

@@ -61,6 +61,17 @@ public sealed class AdminUserStore : IAdminUserStore
         }
     }
 
+    public bool HasRecordedSignIn
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _users.Count > 0;
+            }
+        }
+    }
+
     public AdminUser? Find(string? email)
     {
         var normalized = AdminEmailAllowList.Normalize(email);

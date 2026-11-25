@@ -162,8 +162,9 @@
     <div class="card-body">
         <p class="text-muted">
             The admin token can be used as a password on the login page. It is the break-glass
-            path for when no provider is configured, and turns itself off once one is.
-            Currently <strong>@(AdminAuth.CurrentValue.IsTokenLoginAllowed() ? "enabled" : "disabled")</strong>.
+            path for when no provider works yet, and turns itself off after the first successful
+            sign-in with a provider.
+            Currently <strong>@(AdminAuth.CurrentValue.IsTokenLoginAllowed(AdminUsers.HasRecordedSignIn) ? "enabled" : "disabled")</strong>.
         </p>
         <div class="btn-group">
             <button class="btn @(AdminAuth.CurrentValue.AllowTokenLogin is null ? "btn-primary" : "btn-outline-primary")"
@@ -174,8 +175,8 @@
                     @onclick="() => SetTokenLoginAsync(false)" disabled="@_busy">Always off</button>
         </div>
         <div class="form-text">
-            Turning it off while no provider works will lock you out of the console until you
-            edit <code>appsettings.json</code> directly.
+            Turning it off before a provider sign-in has worked will lock you out of the console
+            until you edit <code>appsettings.json</code> directly.
         </div>
     </div>
 </div>

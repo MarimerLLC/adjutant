@@ -97,9 +97,11 @@ verified email addresses.
   a one-time code from the startup log. This is what stops a publicly reachable server from
   being claimed by whoever finds it first. The code alone grants nothing; it is only accepted
   alongside a provider-verified identity.
-- **Break-glass token login.** The admin token can log in to the console while no provider is
-  configured, and is hidden automatically once one is. It is compared in fixed time. Override
-  with `AdminAuth:AllowTokenLogin`, or from **Settings** in the console.
+- **Break-glass token login.** The admin token can log in to the console until the first
+  successful provider sign-in is recorded in `admin-users.json`, and is hidden automatically
+  from then on. A provider that is configured but has never worked does not turn it off, so a
+  mistake in the provider settings can't lock the operator out. It is compared in fixed time.
+  Override with `AdminAuth:AllowTokenLogin`, or from **Settings** in the console.
 - **Client secrets encrypted at rest.** A secret entered through the console is protected with
   DataProtection before being written to `appsettings.json`, using the keyring in the data
   directory. Secrets set by hand or through environment variables remain plaintext and keep

@@ -1,4 +1,5 @@
 using Adjutant.Core.Configuration;
+using Adjutant.Core.Security;
 using Microsoft.Extensions.Options;
 
 namespace Adjutant.HttpServer.Identity;
@@ -10,17 +11,19 @@ namespace Adjutant.HttpServer.Identity;
 internal sealed class OAuthAvailability(
     IOptionsMonitor<AdjutantConfiguration> server,
     IOptionsMonitor<AdminAuthConfiguration> adminAuth,
+    IAdminUserStore adminUsers,
     IHostEnvironment environment)
 {
     public bool IsAvailable =>
-        Evaluate(server.CurrentValue, adminAuth.CurrentValue, environment.IsDevelopment());
+        Evaluate(server.CurrentValue, adminAuth.CurrentValue, environment.IsDevelopment(), adminUsers.HasRecordedSignIn);
 
     /// <summary>
     /// OAuth is offered when the MCP endpoint is protected at all, OAuth isn't switched off, and
     /// someone can actually complete the browser sign-in: a Google or Microsoft provider is
     /// configured, or (Development only) the admin token can log in to the console.
     /// </summary>
-    public static bool Evaluate(AdjutantConfiguration server, AdminAuthConfiguration adminAuth, bool development)
+    public static bool Evaluate(
+        AdjutantConfiguration server, AdminAuthConfiguration adminAuth, bool development, bool oidcSignInRecorded)
     {
         if (!server.Mcp.RequireApiKey || !server.Mcp.EnableOAuth)
             return false;
@@ -28,7 +31,7 @@ internal sealed class OAuthAvailability(
         if (adminAuth.ConfiguredProviderSchemes().Any())
             return true;
 
-        return development && adminAuth.IsTokenLoginAllowed();
+        return development && adminAuth.IsTokenLoginAllowed(oidcSignInRecorded);
     }
 
     /// <summary>

@@ -4,8 +4,8 @@ using Adjutant.Core.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OpenIdConnect;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 
 namespace Adjutant.HttpServer.BlazorAdmin;
@@ -59,16 +59,55 @@ public static class AdminOidc
             // on the first request — inert options, on a server with no provider yet — stays
             // cached for the life of the process, so a provider added later appears configured
             // everywhere except in the handler that has to use it.
+            //
+            // The token has to come from the AdminAuthConfiguration monitor, not from the
+            // configuration reload token. Both monitors used to listen to that reload token, and
+            // a monitor rebuilds its options inside the callback. Whenever the OIDC monitor's
+            // callback ran first, ConfigureAdminOidcOptions read the AdminAuth values from before
+            // the edit and the handler stayed one edit behind (#125). OnChange fires only after
+            // the AdminAuth monitor has recomputed its value.
             var capturedScheme = scheme;
             builder.Services.AddSingleton<IOptionsChangeTokenSource<OpenIdConnectOptions>>(sp =>
-                new ConfigurationChangeTokenSource<OpenIdConnectOptions>(
+                new AdminAuthOidcChangeTokenSource(
                     capturedScheme,
-                    sp.GetRequiredService<IConfiguration>().GetSection("AdminAuth")));
+                    sp.GetRequiredService<IOptionsMonitor<AdminAuthConfiguration>>()));
         }
 
         builder.Services.ConfigureOptions<ConfigureAdminOidcOptions>();
         return builder;
     }
+}
+
+/// <summary>
+/// Signals a change to one admin scheme's <see cref="OpenIdConnectOptions"/> whenever the
+/// <c>AdminAuth</c> options change, so the OIDC options are rebuilt from the new values rather
+/// than from whatever the AdminAuth monitor held at the moment of the reload.
+/// </summary>
+public sealed class AdminAuthOidcChangeTokenSource : IOptionsChangeTokenSource<OpenIdConnectOptions>, IDisposable
+{
+    private readonly IDisposable? _subscription;
+    private CancellationTokenSource _changed = new();
+
+    public AdminAuthOidcChangeTokenSource(string scheme, IOptionsMonitor<AdminAuthConfiguration> adminAuth)
+    {
+        Name = scheme;
+        _subscription = adminAuth.OnChange(_ => Signal());
+    }
+
+    public string Name { get; }
+
+    public IChangeToken GetChangeToken() => new CancellationChangeToken(Volatile.Read(ref _changed).Token);
+
+    private void Signal()
+    {
+        // Swap before cancelling, so a listener that re-registers from inside the callback gets
+        // the new token. The old source is left for the GC: disposing it could race with a
+        // listener still registering on its token.
+        var previous = Interlocked.Exchange(ref _changed, new CancellationTokenSource());
+        previous.Cancel();
+    }
+
+    public void Dispose() => _subscription?.Dispose();
 }
 
 /// <summary>

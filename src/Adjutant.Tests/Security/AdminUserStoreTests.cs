@@ -146,6 +146,26 @@ public class AdminUserStoreTests
     }
 
     [TestMethod]
+    public void HasRecordedSignIn_IsFalseUntilASignInIsRecorded()
+    {
+        var store = CreateStore();
+        Assert.IsFalse(store.HasRecordedSignIn);
+
+        store.RecordSignIn("someone@example.com", "google", "sub-1");
+        Assert.IsTrue(store.HasRecordedSignIn);
+    }
+
+    [TestMethod]
+    public void HasRecordedSignIn_SurvivesARestart()
+    {
+        // It decides whether the break-glass token login is still offered, so a restart must not
+        // bring that back once a provider sign-in has worked.
+        CreateStore().RecordSignIn("someone@example.com", "google", "sub-1");
+
+        Assert.IsTrue(CreateStore().HasRecordedSignIn);
+    }
+
+    [TestMethod]
     public void Remove_ReturnsFalseForAnUnknownAddress()
     {
         Assert.IsFalse(CreateStore().Remove("nobody@example.com"));
