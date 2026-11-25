@@ -1,6 +1,7 @@
 # First-run "next steps" in the startup log
 
 **Date:** 2026-11-25
+**Version:** 2.2.0
 **Issue:** [#132](https://github.com/MarimerLLC/adjutant/issues/132)
 
 A first start printed the MCP key and claim-code banners (and, since #131, the admin token) but

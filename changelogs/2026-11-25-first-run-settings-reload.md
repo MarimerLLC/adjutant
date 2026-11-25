@@ -1,6 +1,7 @@
 # First-run settings take effect without a restart
 
 **Date:** 2026-11-25
+**Version:** 2.2.0
 **Issue:** [#130](https://github.com/MarimerLLC/adjutant/issues/130)
 
 On a first start with an empty data directory, an account added in the admin console was written

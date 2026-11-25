@@ -37,7 +37,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: adjutant
-          image: docker.io/rockylhotka/adjutant:2.1.0
+          image: docker.io/rockylhotka/adjutant:2.2.0
           ports:
             - containerPort: 8080
               name: http

@@ -1,6 +1,7 @@
 # Admin token generated at first start
 
 **Date:** 2026-11-25
+**Version:** 2.2.0
 **Issue:** [#131](https://github.com/MarimerLLC/adjutant/issues/131)
 
 With no `ADJUTANT_ADMIN_TOKEN` / `Adjutant:AdminToken`, which was the default for a new
