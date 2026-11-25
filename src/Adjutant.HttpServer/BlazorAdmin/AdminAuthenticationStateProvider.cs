@@ -23,17 +23,20 @@ public sealed class AdminAuthenticationStateProvider : RevalidatingServerAuthent
 {
     private readonly IOptionsMonitor<AdminAuthConfiguration> _adminAuth;
     private readonly IAdminUserStore _users;
+    private readonly IAdminTokenStore _tokens;
     private readonly ILogger<AdminAuthenticationStateProvider> _logger;
 
     public AdminAuthenticationStateProvider(
         ILoggerFactory loggerFactory,
         IOptionsMonitor<AdminAuthConfiguration> adminAuth,
         IAdminUserStore users,
+        IAdminTokenStore tokens,
         ILogger<AdminAuthenticationStateProvider> logger)
         : base(loggerFactory)
     {
         _adminAuth = adminAuth;
         _users = users;
+        _tokens = tokens;
         _logger = logger;
     }
 
@@ -48,7 +51,7 @@ public sealed class AdminAuthenticationStateProvider : RevalidatingServerAuthent
         AuthenticationState authenticationState, CancellationToken cancellationToken)
     {
         var reason = AdminSessionPolicy.Evaluate(
-            authenticationState.User, _adminAuth.CurrentValue, _users);
+            authenticationState.User, _adminAuth.CurrentValue, _users, _tokens);
 
         if (reason != AdminSessionPolicy.Reason.None)
         {

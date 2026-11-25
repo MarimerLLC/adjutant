@@ -95,10 +95,7 @@ public class AdminAuthMiddleware
         }
 
         // For REST API paths, check header-based token auth
-        var token = context.Request.Headers.Authorization.FirstOrDefault()?.Replace("Bearer ", "")
-            ?? context.Request.Headers["X-Admin-Token"].FirstOrDefault();
-
-        if (!_adminTokens.Matches(token))
+        if (!_adminTokens.Matches(PresentedToken(context.Request)))
         {
             _logger.LogWarning("Unauthorized admin API access attempt from {RemoteIp}",
                 context.Connection.RemoteIpAddress);
@@ -143,6 +140,27 @@ public class AdminAuthMiddleware
 
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
         await context.Response.WriteAsJsonAsync(new { error = "The admin API is available only from inside the tailnet." });
+    }
+
+    /// <summary>
+    /// The token a REST request presents: <c>Authorization: Bearer &lt;token&gt;</c> (scheme in any
+    /// case), else the <c>X-Admin-Token</c> header, so a proxy that adds its own Authorization
+    /// header doesn't hide it. A bare value in Authorization is still read, as it always was.
+    /// </summary>
+    public static string? PresentedToken(HttpRequest request)
+    {
+        var authorization = request.Headers.Authorization.ToString();
+        if (System.Net.Http.Headers.AuthenticationHeaderValue.TryParse(authorization, out var parsed) &&
+            string.Equals(parsed.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase))
+        {
+            return parsed.Parameter;
+        }
+
+        var header = request.Headers["X-Admin-Token"].ToString();
+        if (!string.IsNullOrEmpty(header))
+            return header;
+
+        return string.IsNullOrEmpty(authorization) ? null : authorization;
     }
 
     private static bool IsGoogleStartPath(string path) =>

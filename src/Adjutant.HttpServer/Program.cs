@@ -58,6 +58,12 @@ public class Program
 
         var builder = WebApplication.CreateBuilder(args);
 
+        // Where to listen, as given by ASPNETCORE_URLS / --urls / ASPNETCORE_HTTP(S)_PORTS. Read
+        // before the default sources are cleared, because that is where these settings live.
+        var hostUrls = builder.WebHost.GetSetting(WebHostDefaults.ServerUrlsKey);
+        var hostHttpPorts = builder.WebHost.GetSetting(WebHostDefaults.HttpPortsKey);
+        var hostHttpsPorts = builder.WebHost.GetSetting(WebHostDefaults.HttpsPortsKey);
+
         // Clear default configuration and load from shared location
         builder.Configuration.Sources.Clear();
 
@@ -75,6 +81,21 @@ public class Program
         // variables still apply; ADJUTANT_ ones are added last so they win.
         builder.Configuration.AddInMemoryCollection(LegacyNames.GetEnvironmentSettings());
         builder.Configuration.AddEnvironmentVariables(AdjutantConfiguration.EnvironmentPrefix);
+
+        // Clearing the sources dropped the port settings above; put them back so they keep working.
+        if (!string.IsNullOrWhiteSpace(hostHttpPorts))
+            builder.WebHost.UseSetting(WebHostDefaults.HttpPortsKey, hostHttpPorts);
+        if (!string.IsNullOrWhiteSpace(hostHttpsPorts))
+            builder.WebHost.UseSetting(WebHostDefaults.HttpsPortsKey, hostHttpsPorts);
+
+        // With no address configured anywhere, listen on localhost only rather than Kestrel's
+        // localhost:5000 default (see ServerConfigurationSources.DefaultUrlWhenUnconfigured).
+        if (ServerConfigurationSources.DefaultUrlWhenUnconfigured(
+                hostUrls, hostHttpPorts, hostHttpsPorts,
+                builder.Configuration.GetSection("Kestrel:Endpoints").GetChildren().Any()) is { } defaultUrl)
+        {
+            builder.WebHost.UseUrls(defaultUrl);
+        }
 
         // Configure logging - always use Serilog, add OTEL if endpoint is available
         builder.Host.UseSerilog();
@@ -122,7 +143,8 @@ public class Program
             var configuration = sp.GetRequiredService<IConfiguration>();
             return new AdminTokenStore(
                 sp.GetRequiredService<ILogger<AdminTokenStore>>(),
-                () => LegacyNames.GetEnvironmentVariable("ADMIN_TOKEN") is { Length: > 0 } fromEnvironment
+                () => LegacyNames.GetEnvironmentVariable("ADMIN_TOKEN") is { } fromEnvironment
+                      && !string.IsNullOrWhiteSpace(fromEnvironment)
                     ? fromEnvironment
                     : configuration.GetValue<string>("Adjutant:AdminToken"));
         });

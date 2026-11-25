@@ -59,6 +59,7 @@ internal static class AuthorizationEndpoint
         IAntiforgery antiforgery,
         IOptionsMonitor<AdminAuthConfiguration> adminAuth,
         IAdminUserStore adminUsers,
+        IAdminTokenStore adminTokens,
         IHostEnvironment environment)
     {
         var request = http.GetOpenIddictServerRequest()
@@ -76,7 +77,7 @@ internal static class AuthorizationEndpoint
         // (allow-list, bound subject, token login still enabled).
         var signedIn = await http.AuthenticateAsync(CookieAuthenticationDefaults.AuthenticationScheme);
         var user = signedIn.Succeeded ? signedIn.Principal : null;
-        var valid = AdminSessionPolicy.Evaluate(user, adminAuth.CurrentValue, adminUsers) == AdminSessionPolicy.Reason.None;
+        var valid = AdminSessionPolicy.Evaluate(user, adminAuth.CurrentValue, adminUsers, adminTokens) == AdminSessionPolicy.Reason.None;
         if (!valid || (!isConsentPost && NeedsFreshSignIn(request, signedIn.Properties)))
         {
             if (request.HasPromptValue(PromptValues.None))

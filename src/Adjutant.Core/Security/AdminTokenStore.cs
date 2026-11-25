@@ -65,7 +65,10 @@ public sealed class AdminTokenStore : IAdminTokenStore
     public string? EnsureToken()
     {
         if (IsConfigured)
+        {
+            ForgetStoredToken();
             return null;
+        }
 
         lock (_gate)
         {
@@ -114,6 +117,65 @@ public sealed class AdminTokenStore : IAdminTokenStore
         lock (_gate)
         {
             return _storedHash is not null && CryptographicOperations.FixedTimeEquals(presentedHash, _storedHash);
+        }
+    }
+
+    public string? Fingerprint
+    {
+        get
+        {
+            byte[]? hash;
+            var configured = _configuredToken();
+            if (!string.IsNullOrWhiteSpace(configured))
+            {
+                hash = ComputeHash(configured);
+            }
+            else
+            {
+                lock (_gate)
+                {
+                    hash = _storedHash;
+                }
+            }
+
+            if (hash is null)
+                return null;
+
+            // A second, labelled hash, so the value in a session cookie is not the stored hash.
+            var label = Encoding.UTF8.GetBytes("adjutant-admin-session-binding:");
+            var input = new byte[label.Length + hash.Length];
+            label.CopyTo(input, 0);
+            hash.CopyTo(input, label.Length);
+            return Base64UrlEncode(SHA256.HashData(input))[..22];
+        }
+    }
+
+    /// <summary>
+    /// Once the operator has configured a token, a generated one left in the data directory must
+    /// not come back into force if the configured token is later removed: it may be one the
+    /// operator replaced because it leaked. Deleting it means removing the configured token
+    /// yields a fresh token at the next start instead.
+    /// </summary>
+    private void ForgetStoredToken()
+    {
+        lock (_gate)
+        {
+            if (_storedHash is null && !File.Exists(_filePath))
+                return;
+
+            _storedHash = null;
+            try
+            {
+                File.Delete(_filePath);
+                _logger.LogInformation(
+                    "Deleted {Path}: a configured admin token is in effect, so the generated one is retired.", _filePath);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogWarning(ex,
+                    "Could not delete the retired admin token file {Path}. Delete it manually: if the configured " +
+                    "token is removed later, the generated token in it would be accepted again.", _filePath);
+            }
         }
     }
 

@@ -109,6 +109,40 @@ public sealed partial class AdminTokenBootstrapIntegrationTests
         Assert.AreEqual(HttpStatusCode.OK, (await client.SendAsync(withConfigured)).StatusCode);
     }
 
+    [TestMethod]
+    public async Task ATokenSessionEndsWhenTheTokenIsReplaced()
+    {
+        var settings = (string token) => new
+        {
+            Adjutant = new { Accounts = Array.Empty<object>(), AdminToken = token },
+            AdminAuth = new { AllowedEmails = Array.Empty<string>() }
+        };
+        using var app = new AdjutantApp(settings("first-token"));
+
+        var browser = app.CreateBrowser();
+        await browser.Http.GetAsync($"{AdjutantApp.TestSignInPath}?provider={AdminSessionPolicy.TokenProvider}");
+        Assert.AreEqual(HttpStatusCode.OK, (await browser.Http.GetAsync("/admin/ui")).StatusCode);
+
+        app.UpdateSettings(settings("rotated-token"));
+
+        using var after = await browser.Http.GetAsync("/admin/ui");
+        Assert.AreEqual(HttpStatusCode.Redirect, after.StatusCode, "the old token's session must end");
+        Assert.AreEqual(AdminSignInProcessor.LoginPath, AdjutantApp.Browser.RedirectOf(after).AbsolutePath);
+    }
+
+    [TestMethod]
+    public async Task ATokenSessionFromBeforeTheBindingIsRefused()
+    {
+        // Stands in for a cookie issued before the upgrade, when this server accepted any token.
+        using var app = new AdjutantApp(NoTokenSettings());
+        var browser = app.CreateBrowser();
+        await browser.Http.GetAsync($"{AdjutantApp.TestSignInPath}?provider={AdminSessionPolicy.TokenProvider}&fingerprint=none");
+
+        using var response = await browser.Http.GetAsync("/admin/ui");
+        Assert.AreEqual(HttpStatusCode.Redirect, response.StatusCode);
+        Assert.AreEqual(AdminSignInProcessor.LoginPath, AdjutantApp.Browser.RedirectOf(response).AbsolutePath);
+    }
+
     private static StringContent JsonContent(string json) =>
         new(json, System.Text.Encoding.UTF8, "application/json");
 

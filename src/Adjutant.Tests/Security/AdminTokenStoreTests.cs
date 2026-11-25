@@ -107,6 +107,45 @@ public sealed class AdminTokenStoreTests
     }
 
     [TestMethod]
+    public void AConfiguredTokenRetiresTheGeneratedOneForGood()
+    {
+        var generated = Create().EnsureToken()!;
+        Assert.IsTrue(File.Exists(FilePath));
+
+        // A start with a configured token deletes the generated one...
+        Assert.IsNull(Create(configured: "operator-token").EnsureToken());
+        Assert.IsFalse(File.Exists(FilePath), "the retired token file should be deleted");
+
+        // ...so removing the configured token later doesn't bring it back.
+        var afterRemoval = Create();
+        Assert.IsFalse(afterRemoval.Matches(generated), "a retired generated token must not be accepted again");
+        var fresh = afterRemoval.EnsureToken();
+        Assert.IsNotNull(fresh, "a new token is generated instead");
+        Assert.AreNotEqual(generated, fresh);
+    }
+
+    [TestMethod]
+    public void TheFingerprintFollowsTheTokenInEffect()
+    {
+        Assert.IsNull(Create().Fingerprint, "no token, no fingerprint");
+
+        var store = Create();
+        store.EnsureToken();
+        var generated = store.Fingerprint;
+        Assert.IsNotNull(generated);
+        Assert.AreEqual(generated, Create().Fingerprint, "stable across restarts");
+
+        string? configured = "a";
+        var switching = new AdminTokenStore(NullLogger<AdminTokenStore>.Instance, () => configured, FilePath);
+        var first = switching.Fingerprint;
+        configured = "b";
+        Assert.AreNotEqual(first, switching.Fingerprint, "changes with the token");
+        Assert.AreNotEqual(generated, first);
+
+        Assert.IsFalse(File.ReadAllText(FilePath).Contains(generated!), "the fingerprint is not the stored hash");
+    }
+
+    [TestMethod]
     public void AMalformedFileIsReplacedByANewToken()
     {
         File.WriteAllText(FilePath, "{ not json");

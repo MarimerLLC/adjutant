@@ -29,7 +29,39 @@ already failed safe in the same situation by generating a key.
   generates one (a blank value counts as unset).
 - Docs: configuration.md ("The admin token") and security.md.
 
+## Review follow-ups
+
+- **Generated secrets stay out of log files.** The banner's secret line goes to standard output
+  only (`StartupSecrets.Show`), and Serilog records a placeholder in its place. Before, the token
+  reached `{data}/logs/adjutant-http-*.log` and any OTLP backend in plain text. The first-start MCP
+  API key banner had the same flaw and now works the same way. `docker logs` and `kubectl logs`
+  still show both secrets.
+- **Token sessions are bound to the token.** A token login stores a fingerprint of the token in
+  effect (`IAdminTokenStore.Fingerprint`, a labelled second hash, in claim
+  `adjutant:admin_token`). `AdminSessionPolicy.Evaluate` ends a token session whose fingerprint is
+  missing or stale (`Reason.TokenChanged`). The check now also runs on every request through the
+  cookie's `OnValidatePrincipal`, as well as on circuit revalidation and on the OAuth consent page.
+  Replacing the token, by setting `ADJUTANT_ADMIN_TOKEN` or deleting `admin-token.json`, ends the
+  sessions opened with the old one. So do cookies from before this release, including any opened
+  while a server with no token accepted every input. Provider sessions are unchanged.
+- **A retired generated token can't come back.** A start with a configured token deletes
+  `admin-token.json`, so removing the configured token later produces a new token rather than
+  reviving the old one, which may have been replaced because it leaked.
+- **Header parsing.** `Authorization: Bearer` is matched in any case, and `X-Admin-Token` is
+  read when the Authorization header carries another scheme, for example a proxy's Basic
+  credentials. A bare token in Authorization still works.
+- A blank `ADJUTANT_ADMIN_TOKEN` no longer hides `Adjutant:AdminToken` from appsettings.json.
+- Removing a configured token while the server is running leaves no token until the next start,
+  which generates one. Until then the admin API refuses everything. The startup log says so.
+
 ## Upgrade notes
+
+- **Existing admin-token console sessions end** at their next request, because they carry no
+  token binding. Sign in again with the token.
+- **docker-compose users who never set `ADJUTANT_ADMIN_TOKEN`** were running with the compose
+  default `changeme`. With this compose file they get a generated token instead. Read it from
+  `docker compose logs adjutant`. Scripts sending `changeme` get `401`. To keep a fixed token, set
+  `ADJUTANT_ADMIN_TOKEN` in `.env`.
 
 - Servers that set `ADJUTANT_ADMIN_TOKEN` (the k8s manifest does, from `adjutant-secrets`) are
   unaffected.

@@ -59,5 +59,7 @@ public static class AdminCookieOptions
         options.LoginPath = AdminSignInProcessor.LoginPath;
         options.LogoutPath = "/admin/auth/logout";
         options.AccessDeniedPath = AdminSignInProcessor.LoginPathWithError("notallowed");
+
+        options.Events.OnValidatePrincipal = AdminSessionPolicy.ValidateTokenSessionAsync;
     }
 }
