@@ -88,12 +88,37 @@ public sealed class FirstRunConfigurationTests
             Assert.AreEqual("https://operator.example", config["Adjutant:ExternalBaseUrl"], "operator settings win");
             Assert.AreEqual("a", config["Adjutant:Accounts:0:Id"]);
             Assert.AreEqual("http://+:8080", config["Kestrel:Endpoints:Http:Url"],
-                "the shipped endpoint stays in effect once the operator's file exists");
+                "shipped values the operator doesn't override stay in effect once the operator's file exists");
         }
         finally
         {
             Directory.Delete(dir, recursive: true);
         }
+    }
+
+    [TestMethod]
+    [DataRow(null, null, null, false, ServerConfigurationSources.DefaultListenUrl)]
+    [DataRow("  ", null, null, false, ServerConfigurationSources.DefaultListenUrl)]
+    [DataRow("http://+:8080", null, null, false, null)]
+    [DataRow(null, "8080", null, false, null)]
+    [DataRow(null, null, "8443", false, null)]
+    [DataRow(null, null, null, true, null)]
+    public void TheDefaultAddressAppliesOnlyWhenNothingElseIsConfigured(
+        string? urls, string? httpPorts, string? httpsPorts, bool kestrel, string? expected)
+    {
+        Assert.AreEqual(expected, ServerConfigurationSources.DefaultUrlWhenUnconfigured(urls, httpPorts, httpsPorts, kestrel));
+    }
+
+    [TestMethod]
+    public void TheShippedSettingsBindNoNetworkAddress()
+    {
+        // A Kestrel endpoint here would override ASPNETCORE_URLS, including launchSettings'
+        // localhost URL, and listen on every interface.
+        var shipped = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+        Assert.IsTrue(File.Exists(shipped), shipped);
+        var config = new ConfigurationBuilder().AddJsonFile(shipped).Build();
+        Assert.IsFalse(config.GetSection("Kestrel").Exists(), "the shipped appsettings.json must not configure Kestrel");
+        Assert.IsFalse(config.GetSection("Adjutant:Accounts").GetChildren().Any(), "shipped accounts would merge into the operator's list");
     }
 
     [TestMethod]

@@ -39,4 +39,23 @@ public static class ServerConfigurationSources
             loaded.Add(dataConfigPath);
         return loaded;
     }
+
+    /// <summary>The address used when nothing else says where to listen.</summary>
+    public const string DefaultListenUrl = "http://localhost:8080";
+
+    /// <summary>
+    /// Returns <see cref="DefaultListenUrl"/> when no listening address is configured at all,
+    /// otherwise null. The shipped appsettings.json carries no Kestrel endpoint: one there would
+    /// override <c>ASPNETCORE_URLS</c> (including the <c>localhost</c> URL in launchSettings.json)
+    /// and bind every interface. The container sets <c>ASPNETCORE_URLS=http://+:8080</c> itself,
+    /// so only a bare run lands here, and it stays on the local machine.
+    /// </summary>
+    public static string? DefaultUrlWhenUnconfigured(
+        string? urls, string? httpPorts, string? httpsPorts, bool kestrelEndpointsConfigured) =>
+        kestrelEndpointsConfigured
+        || !string.IsNullOrWhiteSpace(urls)
+        || !string.IsNullOrWhiteSpace(httpPorts)
+        || !string.IsNullOrWhiteSpace(httpsPorts)
+            ? null
+            : DefaultListenUrl;
 }

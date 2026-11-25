@@ -34,14 +34,15 @@ Adjutant stores all user-specific data in a consistent location:
 3. **Application Directory** (fallback for development): `appsettings.json` in the same directory as the executable
 
 The HTTP server reads both files, layered: the application-directory copy supplies shipped
-defaults (in the Docker image, the `Kestrel` endpoint on port 8080), and the data-directory file is
-applied over it. The data-directory file is watched for changes even before it exists, so on a
-first run the admin console's first save creates it and takes effect without a restart.
-Environment variables apply over both.
+defaults, and the data-directory file is applied over it. The data-directory file is watched for
+changes even before it exists, so on a first run the admin console's first save creates it and
+takes effect without a restart. Environment variables apply over both.
 
-The shipped `Kestrel` endpoint takes precedence over `ASPNETCORE_URLS`. To listen on another
-port, set `Kestrel:Endpoints:Http:Url` in the data-directory `appsettings.json`, or set the
-environment variable `ADJUTANT_Kestrel__Endpoints__Http__Url` (for example `http://+:5080`).
+**Listening address.** In order of precedence: a `Kestrel:Endpoints` section (in the
+data-directory `appsettings.json`, or as `ADJUTANT_Kestrel__Endpoints__Http__Url`), then
+`ASPNETCORE_URLS` / `--urls`, then `ASPNETCORE_HTTP_PORTS`. The Docker image sets
+`ASPNETCORE_URLS=http://+:8080`. With none of these, the server listens on
+`http://localhost:8080`, reachable from the same machine only.
 
 ### Environment Variable Override
 
