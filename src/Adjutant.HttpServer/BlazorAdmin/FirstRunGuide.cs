@@ -73,7 +73,7 @@ public static class FirstRunGuide
     private static string SignInStep(State state)
     {
         var token = state.AdminTokenConfigured
-            ? "the admin token (ADJUTANT_ADMIN_TOKEN)"
+            ? "the configured admin token (ADJUTANT_ADMIN_TOKEN or Adjutant:AdminToken)"
             : $"the admin token from the first-start banner (lost it? delete {AdminTokenStore.FileName} and restart)";
         var providers = state.Providers.Count > 0 ? string.Join(" or ", state.Providers) : null;
         var claim = state.ClaimNeeded ? ", then enter the claim code above" : "";
@@ -100,8 +100,10 @@ public static class FirstRunGuide
     /// </summary>
     public static string ResolveBaseUrl(string? externalBaseUrl, IEnumerable<string> listenUrls)
     {
+        // http(s) only: on Linux "/adjutant" parses as an absolute file:// URI.
         if (!string.IsNullOrWhiteSpace(externalBaseUrl) &&
-            Uri.TryCreate(externalBaseUrl.Trim(), UriKind.Absolute, out _))
+            Uri.TryCreate(externalBaseUrl.Trim(), UriKind.Absolute, out var external) &&
+            (external.Scheme == Uri.UriSchemeHttp || external.Scheme == Uri.UriSchemeHttps))
         {
             return externalBaseUrl.Trim().TrimEnd('/');
         }

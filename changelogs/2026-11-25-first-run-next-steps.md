@@ -24,8 +24,8 @@ tool call, and it pointed at the CLI.
   ```
 
   - The address is `Adjutant:ExternalBaseUrl` when set. Otherwise it's the first listening address
-    (HTTPS preferred), with a wildcard host shown as `<host>`.
-  - Step 1 follows the sign-in options in effect: the configured token (`ADJUTANT_ADMIN_TOKEN`) or
+    (HTTPS preferred), with a wildcard host shown as `<host>`. An `ExternalBaseUrl` that is not http(s) is ignored.
+  - Step 1 follows the sign-in options in effect: the configured token (`ADJUTANT_ADMIN_TOKEN` or `Adjutant:AdminToken`) or
     the generated one, the configured providers, the claim code while unclaimed, or how to enable a
     sign-in method when none is.
   - Step 3 says no key is needed when `Adjutant:Mcp:RequireApiKey` is false.

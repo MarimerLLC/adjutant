@@ -36,7 +36,7 @@ public sealed class FirstRunGuideTests
     {
         var text = Text(Fresh(adminTokenConfigured: true));
 
-        StringAssert.Contains(text, "sign in with the admin token (ADJUTANT_ADMIN_TOKEN).");
+        StringAssert.Contains(text, "sign in with the configured admin token (ADJUTANT_ADMIN_TOKEN or Adjutant:AdminToken).");
         Assert.IsFalse(text.Contains("first-start banner)"));
     }
 
@@ -45,7 +45,7 @@ public sealed class FirstRunGuideTests
     {
         var text = Text(Fresh(providers: ["Google", "Microsoft"], adminTokenConfigured: true));
 
-        StringAssert.Contains(text, "sign in with the admin token (ADJUTANT_ADMIN_TOKEN), or with Google or Microsoft, then enter the claim code above.");
+        StringAssert.Contains(text, "sign in with the configured admin token (ADJUTANT_ADMIN_TOKEN or Adjutant:AdminToken), or with Google or Microsoft, then enter the claim code above.");
     }
 
     [TestMethod]
@@ -80,6 +80,9 @@ public sealed class FirstRunGuideTests
     [DataRow(null, new[] { "http://0.0.0.0:5000", "https://0.0.0.0:5001" }, "https://<host>:5001")]
     [DataRow(null, new[] { "http://localhost:5000" }, "http://localhost:5000")]
     [DataRow("not a url", new[] { "http://localhost:5000" }, "http://localhost:5000")]
+    [DataRow("/adjutant", new[] { "http://localhost:5000" }, "http://localhost:5000")]
+    [DataRow("ftp://files.example.com", new[] { "http://localhost:5000" }, "http://localhost:5000")]
+    [DataRow("file:///srv/adjutant", new[] { "http://localhost:5000" }, "http://localhost:5000")]
     [DataRow(null, new string[0], "http://<host>:8080")]
     public void TheBaseUrlIsTheExternalOneOrTheListeningAddress(string? external, string[] urls, string expected)
     {
