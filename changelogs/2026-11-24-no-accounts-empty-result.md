@@ -1,6 +1,7 @@
 # Read Tools Return an Empty Result on a Server With No Accounts
 
 **Date**: November 24, 2026
+**Version**: 2.1.0
 **Issue**: [#118](https://github.com/MarimerLLC/adjutant/issues/118)
 
 ---

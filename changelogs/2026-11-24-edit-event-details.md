@@ -1,6 +1,7 @@
 # Edit Event Descriptions and Recurrence, and Control Attendee Notifications
 
 **Date**: November 24, 2026
+**Version**: 2.1.0
 **Issue**: [#121](https://github.com/MarimerLLC/adjutant/issues/121)
 
 ---

@@ -1,6 +1,7 @@
 # Public access through Tailscale Funnel
 
 **Date:** 2026-11-25
+**Version:** 2.1.0
 **Issue:** [#81](https://github.com/MarimerLLC/adjutant/issues/81), phase 5
 
 The last phase of making the HTTP server safe to expose to the internet. Phases 1–4 (MCP API
