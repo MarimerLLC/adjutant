@@ -12,9 +12,24 @@ The HTTP server exposes three surfaces with independent protection:
 |---|---|
 | `/` (MCP protocol), `/attachments/*` | MCP API key — `Authorization: Bearer <key>` or `X-Api-Key: <key>` — or an MCP OAuth access token issued by this server |
 | `/connect/*`, `/.well-known/oauth-*` | MCP OAuth authorization server; only offered while an admin sign-in provider is configured |
-| `/admin/*` (REST API) | Admin token — `ADJUTANT_ADMIN_TOKEN` |
-| `/admin/ui/*` (Blazor console) | Session cookie, issued after OIDC sign-in or admin-token login |
+| `/admin/*` (REST API) | Admin token — `ADJUTANT_ADMIN_TOKEN`; tailnet only (see below) |
+| `/admin/ui/*` (Blazor console) | Session cookie, issued after OIDC sign-in or admin-token login (admin-token login from the tailnet only) |
 | `/health`, `/health/ready` | Anonymous (Kubernetes probes) |
+
+### Requests from the public internet (Tailscale Funnel)
+
+Requests that arrive through a Tailscale Funnel endpoint carry a `Tailscale-Funnel-Request`
+header, added by Tailscale's proxy. On those requests the admin token is never accepted:
+
+- the console login page hides the token field, and refuses a token login posted anyway;
+- a console session that was established with the token counts as signed out, so its cookie
+  cannot be replayed from the internet;
+- the REST API under `/admin/*` returns `401`, even with the correct token, and even when no
+  token is configured (where it would otherwise be open).
+
+Provider sign-in, MCP API keys and MCP OAuth work the same over Funnel as inside the tailnet. The
+header only ever removes access, so a tailnet client that sets it itself only locks itself out.
+See [Public access](PUBLIC-ACCESS.md) for exposing the server.
 
 ### MCP API Keys
 
@@ -101,7 +116,8 @@ verified email addresses.
   successful provider sign-in is recorded in `admin-users.json`, and is hidden automatically
   from then on. A provider that is configured but has never worked does not turn it off, so a
   mistake in the provider settings can't lock the operator out. It is compared in fixed time.
-  Override with `AdminAuth:AllowTokenLogin`, or from **Settings** in the console.
+  Override with `AdminAuth:AllowTokenLogin`, or from **Settings** in the console. It is never
+  accepted over Tailscale Funnel, only from inside the tailnet.
 - **Client secrets encrypted at rest.** A secret entered through the console is protected with
   DataProtection before being written to `appsettings.json`, using the keyring in the data
   directory. Secrets set by hand or through environment variables remain plaintext and keep

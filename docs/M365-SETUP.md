@@ -43,6 +43,9 @@ Choose the appropriate option based on your scenario:
 ### Option 4: IT Administrator Setup
 - [IT Administrator Guide](#it-administrator-guide-entra-app-registration) - Detailed Entra ID setup for IT admins
 
+### Admin console sign-in (HTTP server)
+- [Admin Console Sign-In App](#admin-console-sign-in-app-http-server) - Signing in to the HTTP server's admin console with Microsoft, not mailbox access
+
 ---
 
 ## Outlook.com Setup
@@ -623,6 +626,37 @@ Remove-AzureADServiceAppRoleAssignment -ObjectId $userId -AppRoleAssignmentId $s
 - [Security Policy](https://github.com/MarimerLLC/adjutant/security)
 
 ---
+
+## Admin Console Sign-In App (HTTP server)
+
+Signing in to the HTTP server's admin console with Microsoft needs its own app registration,
+separate from any used for mailbox access. It asks only for `openid email profile`, holds no
+Graph permissions, and is a confidential web app with a client secret rather than a public
+client.
+
+1. **Register an app** in **Entra ID → App registrations → New registration**:
+   - Name: for example `Adjutant admin sign-in`.
+   - Supported account types: **Accounts in this organizational directory only** is the
+     simplest and is what the authority below assumes.
+   - Redirect URI: platform **Web**, value `<ExternalBaseUrl>/admin/auth/signin/microsoft`, for
+     example `https://adjutant.<tailnet>.ts.net/admin/auth/signin/microsoft`. The console's
+     **Settings** page shows the exact value to copy.
+2. **Create a client secret** (**Certificates & secrets → New client secret**) and copy its
+   **Value**, not its **Secret ID**. Pasting the ID is the most common mistake, and it fails at
+   the token exchange.
+3. **Add the `email` optional claim** (**Token configuration → Add optional claim → ID →
+   email**). Without it, work accounts often get an ID token with no email address, and the
+   console refuses a sign-in that has none.
+4. **API permissions**: the default `User.Read` can stay. Nothing else is needed.
+5. In the console go to **Settings → Sign-in providers → Microsoft**. Enter the Authority
+   `https://login.microsoftonline.com/<tenant-id>/v2.0` (the **Directory (tenant) ID** from the
+   app's Overview page), the **Application (client) ID** and the secret value, then save.
+6. Sign out, sign in with Microsoft, and claim the server if it has no allow-list yet (see
+   [First run: claiming the server](configuration.md#first-run-claiming-the-server)).
+
+Entra has no domain-verification requirement for redirect URIs, so a `<tailnet>.ts.net` host
+works as is. Entra generally doesn't send `email_verified`. The console accepts its absence, and
+binds the account's subject on first sign-in so that a reassigned address can't inherit access.
 
 ## Multi-Tenant Setup (Legacy Section)
 

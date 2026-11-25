@@ -7,6 +7,7 @@
 @using Adjutant.Core.Configuration
 @using Adjutant.Core.Security
 @using Adjutant.HttpServer.BlazorAdmin
+@using Adjutant.HttpServer.Security
 @using Microsoft.AspNetCore.Authentication
 @using Microsoft.AspNetCore.Authentication.Cookies
 @using Microsoft.Extensions.Options
@@ -63,6 +64,13 @@
                     </button>
                 </EditForm>
             }
+            else if (_tokenHiddenByFunnel)
+            {
+                <div class="alert alert-secondary py-2 mb-0 @(_providers.Count > 0 ? "mt-3" : "")">
+                    <i class="bi bi-shield-lock me-1"></i>
+                    Admin-token sign-in is available only from inside the tailnet.
+                </div>
+            }
             else if (_providers.Count == 0)
             {
                 <div class="alert alert-warning py-2 mb-0">
@@ -79,6 +87,7 @@
     private string? _errorMessage;
     private List<string> _providers = [];
     private bool _tokenLoginAllowed;
+    private bool _tokenHiddenByFunnel;
 
     [SupplyParameterFromForm]
     private LoginInput? Input { get; set; }
@@ -99,7 +108,10 @@
 
         var config = AdminAuth.CurrentValue;
         _providers = config.ConfiguredProviderSchemes().ToList();
-        _tokenLoginAllowed = TokenFormOffered();
+        var viaFunnel = FunnelRequest.IsFunnel(HttpContextAccessor.HttpContext);
+        var tokenFormOffered = TokenFormOffered();
+        _tokenLoginAllowed = tokenFormOffered && !viaFunnel;
+        _tokenHiddenByFunnel = tokenFormOffered && viaFunnel;
 
         _errorMessage = Error switch
         {
@@ -114,7 +126,8 @@
             "unknownprovider" => "Unknown sign-in provider.",
             // Without the token field there is no way into the console to fix a provider that
             // has stopped working, so name the setting that brings it back.
-            "provider" when !_tokenLoginAllowed =>
+            // (Over Funnel the token is still there from inside the tailnet, which the page says.)
+            "provider" when !_tokenLoginAllowed && !_tokenHiddenByFunnel =>
                 "Sign-in failed at the identity provider. If the provider is misconfigured, set " +
                 "AdminAuth:AllowTokenLogin to true in appsettings.json and restart to sign in with the admin token.",
             "provider" => "Sign-in failed at the identity provider. Please try again.",
@@ -131,6 +144,13 @@
         if (!TokenFormOffered())
         {
             _errorMessage = "Token login is disabled on this server.";
+            return;
+        }
+
+        // The break-glass token is never accepted from the public internet (see FunnelRequest).
+        if (FunnelRequest.IsFunnel(httpContext))
+        {
+            _errorMessage = "Admin-token sign-in is available only from inside the tailnet.";
             return;
         }
 

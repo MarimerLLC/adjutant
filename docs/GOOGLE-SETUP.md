@@ -18,6 +18,7 @@ The authentication process involves:
 - [Step-by-Step Setup](#step-by-step-setup)
 - [Authenticate Using CLI](#authenticate-using-cli)
 - [Multi-Account Setup](#multi-account-setup)
+- [Admin Console Sign-In Client (HTTP server)](#admin-console-sign-in-client-http-server)
 - [Troubleshooting](#troubleshooting)
 
 ## Option A: Shared OAuth Client (Recommended)
@@ -390,6 +391,48 @@ If you need to re-authenticate (e.g., password changed, permissions updated):
 Adjutant.Cli add-google-account
 # Use the SAME Account ID to overwrite existing configuration
 ```
+
+## Admin Console Sign-In Client (HTTP server)
+
+Everything above is about *mailbox* access. Signing in to the HTTP server's admin console with
+Google is a separate concern and needs its own OAuth client. It asks only for `openid email
+profile`, never requests offline access, and never touches Gmail or Calendar. Don't reuse the
+mailbox client: its redirect URI, scopes and publishing status are all different.
+
+Use a **separate Google Cloud project** for it. The consent screen and its Testing/Production
+status belong to the project, not the client, so sharing a project with the mailbox client ties
+the two together.
+
+1. **Create a project**, for example `Adjutant admin sign-in`. No APIs need to be enabled.
+2. **Configure the consent screen** (**Google Auth Platform** → **Branding**, or **APIs &
+   Services** → **OAuth consent screen** in the older console):
+   - App name and support email: anything recognizable.
+   - Audience: **External** (or **Internal** if every administrator is in your Workspace).
+   - Scopes: add none. `openid`, `email` and `profile` are non-sensitive and always available.
+3. **Leave the app in Testing** (**Audience** → **Test users**) and add each administrator's
+   address as a test user. Testing mode is enough here: its 7-day refresh-token expiry doesn't
+   matter because console sign-in never asks for a refresh token. It also avoids Google's app
+   verification, and is the way around the authorized-domain question described below.
+4. **Create the client** (**Clients** → **Create client**):
+   - Application type: **Web application**.
+   - Authorized redirect URIs: `<ExternalBaseUrl>/admin/auth/signin/google`, for example
+     `https://adjutant.<tailnet>.ts.net/admin/auth/signin/google`. The console's **Settings**
+     page shows the exact value to copy. It must match character for character, and it is
+     deliberately different from the mailbox callback `/admin/auth/google/callback`.
+   - Authorized JavaScript origins: not needed.
+5. **Copy the client ID and secret**, then in the console go to **Settings → Sign-in providers →
+   Google**. Enter Authority `https://accounts.google.com` with the client ID and secret, and
+   save. It takes effect immediately.
+6. **Sign out and sign in with Google.** On a server with no allow-list yet you are sent to the
+   claim page. Enter the claim code from the startup log or from `admin-claim-code.txt` in the
+   data directory (see [First run: claiming the
+   server](configuration.md#first-run-claiming-the-server)).
+
+**`.ts.net` hosts.** Once an app is published (moved out of Testing), Google expects redirect-URI
+domains to be on the consent screen's authorized domains, which normally needs Search Console
+verification. Whether a `<tailnet>.ts.net` name can be verified has not been tested. Staying in
+Testing sidesteps the question, at the cost of a 100-test-user cap that a single-owner server
+won't reach.
 
 ## Troubleshooting
 

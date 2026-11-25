@@ -7,6 +7,10 @@
 #   2. Create the PVC: kubectl apply -f pvc.yaml
 #   3. Deploy: kubectl apply -f deployment.yaml
 #   4. Access via port-forward: kubectl port-forward -n adjutant svc/adjutant 8080:8080
+#
+# PUBLIC: the Ingress below carries tailscale.com/funnel: "true", so applying this file publishes
+# the server to the internet. Work through docs/PUBLIC-ACCESS.md before the first apply on a new
+# deployment, and remember that every later apply (an image bump included) keeps it public.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -50,6 +54,11 @@ spec:
             #     secretKeyRef:
             #       name: adjutant-secrets
             #       key: mcp-api-key
+            # The public origin: drives OIDC redirect URIs, the MCP OAuth issuer and the Secure /
+            # __Host- session cookie. The pod only sees plain HTTP behind the Tailscale proxy, so it
+            # cannot work this out itself. Must match tailscale.com/hostname on the Ingress below.
+            - name: ADJUTANT_Adjutant__ExternalBaseUrl
+              value: "https://adjutant.tail920062.ts.net"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://alloy.loki.svc.cluster.local:4317"
             - name: OTEL_SERVICE_NAME
@@ -107,6 +116,12 @@ metadata:
     tailscale.com/hostname: adjutant
     # The operator's default tag (tag:k8s) is not permitted by the tailnet ACL.
     tailscale.com/tags: tag:k8s-operator
+    # Publishes this host to the internet through Tailscale Funnel. Prerequisites, all checked in
+    # docs/PUBLIC-ACCESS.md: MCP keys enforced, a sign-in provider configured and the server claimed
+    # (admin-users.json exists), an image that refuses the admin token over Funnel, and the
+    # tailnet policy granting the "funnel" node attribute to tag:k8s-operator.
+    # To un-publish, remove this line (or set it to "false") and apply again.
+    tailscale.com/funnel: "true"
 spec:
   ingressClassName: tailscale
   tls:

@@ -340,6 +340,11 @@ Refer to your MCP client's documentation for specific configuration instructions
 For repeatable installs, self-contained publishing, upgrades, and rollbacks, see the
 [Deployment Guide](DEPLOYMENT.md).
 
+The Windows installer sets up the CLI and the stdio server only. For the HTTP server, with its
+admin console sign-in (Google or Microsoft, a first-run claim code) and an MCP endpoint that
+needs an API key, see [Admin Console Sign-In](configuration.md#admin-console-sign-in-http-server)
+and, for internet exposure, [Public Access](PUBLIC-ACCESS.md).
+
 ## Verification
 
 ### Verify CLI Installation

@@ -186,6 +186,7 @@ connect without a key once an admin sign-in provider is configured: add the serv
 - [Connecting a client](docs/configuration.md#connecting-a-client) — Claude Code, VS Code, and `mcp-remote` examples
 - [MCP OAuth](docs/configuration.md#mcp-oauth-http-server) — connecting with a browser sign-in instead of a key
 - [Transport security](docs/security.md#transport-security-http-server) — what protects each endpoint
+- [Public access](docs/PUBLIC-ACCESS.md) — exposing the server through Tailscale Funnel, with a pre-flight checklist
 
 Manifests for Kubernetes are in [`k8s/`](k8s/), and a Compose file is at
 [`docker-compose.yml`](docker-compose.yml).

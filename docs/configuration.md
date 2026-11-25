@@ -821,8 +821,10 @@ matches every address in that domain. Matching ignores case and surrounding whit
 
 #### Registering the redirect URI
 
-Each operator creates their own OAuth client; nothing is shipped with the product. The redirect
-URI to register with the provider is:
+Each operator creates their own OAuth client; nothing is shipped with the product. Step-by-step
+walkthroughs: [Google](GOOGLE-SETUP.md#admin-console-sign-in-client-http-server) and
+[Microsoft Entra](M365-SETUP.md#admin-console-sign-in-app-http-server). The redirect URI to
+register with the provider is:
 
 ```
 <ExternalBaseUrl>/admin/auth/signin/google
@@ -880,6 +882,9 @@ sign-in has actually worked:
 
 Replacing a provider counts as starting over: a sign-in recorded through a provider that has
 since been removed does not turn token login off.
+
+Token login is never offered to a request that arrives through Tailscale Funnel, so these steps
+must be done from inside the tailnet. See [Public access](PUBLIC-ACCESS.md).
 
 If token login is already off and a provider stops working, there are two ways back in, both
 needing access to the host: set `"AllowTokenLogin": true` in the `AdminAuth` section of

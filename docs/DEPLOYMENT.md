@@ -2,7 +2,8 @@
 
 This guide covers how to build, deploy, upgrade, and roll back a self-contained desktop install
 of the server, for example one that reaches an on-premises Exchange server from a Windows machine.
-For the containerized HTTP server, see the manifests in `k8s/`.
+For the containerized HTTP server, see the manifests in `k8s/`, and
+[PUBLIC-ACCESS.md](PUBLIC-ACCESS.md) before exposing it to the internet through Tailscale Funnel.
 
 For first-time installation see [INSTALLATION.md](INSTALLATION.md). For account configuration see
 [configuration.md](configuration.md), and [EWS-ONPREM-SETUP.md](EWS-ONPREM-SETUP.md) for
