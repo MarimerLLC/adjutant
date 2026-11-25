@@ -61,26 +61,15 @@ public class Program
         // Clear default configuration and load from shared location
         builder.Configuration.Sources.Clear();
 
-        if (File.Exists(configPath))
-        {
-            builder.Configuration.AddJsonFile(configPath, optional: false, reloadOnChange: true);
-            Log.Information("Loaded configuration from {ConfigPath}", configPath);
-        }
-        else
-        {
-            // Fallback: try application directory (for development)
-            var appConfigPath = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
-            if (File.Exists(appConfigPath))
-            {
-                builder.Configuration.AddJsonFile(appConfigPath, optional: false, reloadOnChange: true);
-                Log.Information("Loaded configuration from application directory: {ConfigPath}", appConfigPath);
-            }
-            else
-            {
-                Log.Warning("No appsettings.json found. Expected at: {UserConfigPath} or {AppConfigPath}",
-                    configPath, appConfigPath);
-            }
-        }
+        // Shipped defaults from the application directory, then the operator's settings from the
+        // data directory. The data file is watched even before it exists, so the first save from
+        // the admin console takes effect without a restart.
+        var appConfigPath = Path.Combine(AppContext.BaseDirectory, "appsettings.json");
+        var loadedFiles = ServerConfigurationSources.AddSettingsFiles(builder.Configuration, configPath, appConfigPath);
+        Log.Information(
+            "Configuration: shipped defaults {AppConfigPath} ({AppConfigState}), settings {ConfigPath} ({ConfigState}, watched for changes)",
+            appConfigPath, loadedFiles.Contains(appConfigPath) ? "loaded" : "not found",
+            configPath, loadedFiles.Contains(configPath) ? "loaded" : "not created yet");
 
         // Add environment variables (can override file settings). Pre-rename CALENDAR_MCP_
         // variables still apply; ADJUTANT_ ones are added last so they win.

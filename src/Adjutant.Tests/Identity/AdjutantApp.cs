@@ -38,11 +38,16 @@ internal sealed partial class AdjutantApp : WebApplicationFactory<Adjutant.HttpS
     private readonly string? _previousDataDirectory;
 
     /// <param name="appSettings">The server's appsettings.json; <see cref="DefaultSettings"/> when null.</param>
-    public AdjutantApp(object? appSettings = null)
+    /// <param name="freshInstall">
+    /// Start with no appsettings.json in the data directory at all, as a first run of a new
+    /// container does; <paramref name="appSettings"/> is ignored.
+    /// </param>
+    public AdjutantApp(object? appSettings = null, bool freshInstall = false)
     {
         DataDirectory = Path.Combine(Path.GetTempPath(), "adjutant-tests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(DataDirectory);
-        WriteSettings(appSettings ?? DefaultSettings());
+        if (!freshInstall)
+            WriteSettings(appSettings ?? DefaultSettings());
 
         _previousDataDirectory = Environment.GetEnvironmentVariable(ConfigurationPaths.ConfigEnvVariable);
         Environment.SetEnvironmentVariable(ConfigurationPaths.ConfigEnvVariable, DataDirectory);

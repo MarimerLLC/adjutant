@@ -33,6 +33,12 @@ Adjutant stores all user-specific data in a consistent location:
 2. **User Data Directory**: `%LOCALAPPDATA%\Adjutant\appsettings.json` (Windows) or `~/.local/share/Adjutant/appsettings.json` (Linux/macOS)
 3. **Application Directory** (fallback for development): `appsettings.json` in the same directory as the executable
 
+The HTTP server reads both files, layered: the application-directory copy supplies shipped
+defaults (in the Docker image, the `Kestrel` endpoint on port 8080), and the data-directory file is
+applied over it. The data-directory file is watched for changes even before it exists, so on a
+first run the admin console's first save creates it and takes effect without a restart.
+Environment variables apply over both.
+
 ### Environment Variable Override
 
 To use a custom configuration location:
