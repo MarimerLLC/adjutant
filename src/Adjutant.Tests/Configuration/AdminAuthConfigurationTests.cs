@@ -63,19 +63,6 @@ public class AdminAuthConfigurationTests
         Assert.IsFalse(Config(null, withProvider: true).IsTokenLoginAllowed(store));
     }
 
-    [TestMethod]
-    public void TheTokenFormIsNotOfferedWithoutATokenOnceAProviderIsConfigured()
-    {
-        // With no admin token configured the form accepts anything.
-        Assert.IsFalse(Config(null, withProvider: true).IsTokenFormOffered(false, adminTokenConfigured: false, development: false));
-        Assert.IsTrue(Config(null, withProvider: true).IsTokenFormOffered(false, adminTokenConfigured: true, development: false));
-        Assert.IsTrue(Config(null, withProvider: true).IsTokenFormOffered(false, adminTokenConfigured: false, development: true));
-        Assert.IsTrue(Config(null, withProvider: false).IsTokenFormOffered(false, adminTokenConfigured: false, development: false),
-            "unchanged from 2.0.0 while no provider is configured");
-        Assert.IsTrue(Config(true, withProvider: true).IsTokenFormOffered(false, adminTokenConfigured: false, development: false),
-            "an explicit setting still wins");
-    }
-
     /// <summary>Records one sign-in per listed provider.</summary>
     private sealed class FakeUsers(params string[] providers) : Adjutant.Core.Security.IAdminUserStore
     {

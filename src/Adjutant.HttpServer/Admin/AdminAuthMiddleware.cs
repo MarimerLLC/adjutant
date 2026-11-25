@@ -1,7 +1,5 @@
 using System.Security.Claims;
-using System.Security.Cryptography;
-using System.Text;
-using Adjutant.Core.Configuration;
+using Adjutant.Core.Security;
 using Adjutant.HttpServer.BlazorAdmin;
 using Adjutant.HttpServer.Security;
 
@@ -9,14 +7,16 @@ namespace Adjutant.HttpServer.Admin;
 
 /// <summary>
 /// Middleware that validates the admin token for /admin endpoints.
-/// Token is configured via ADJUTANT_ADMIN_TOKEN environment variable.
+/// The token is ADJUTANT_ADMIN_TOKEN (or Adjutant:AdminToken), else the one generated at first
+/// start (<see cref="IAdminTokenStore"/>). No token means nothing matches, never that every
+/// request is let through.
 /// Supports Bearer token and the X-Admin-Token header for the REST API, and the console
 /// session cookie for the Blazor UI paths.
 /// </summary>
 public class AdminAuthMiddleware
 {
     private readonly RequestDelegate _next;
-    private readonly string? _adminToken;
+    private readonly IAdminTokenStore _adminTokens;
     private readonly ILogger<AdminAuthMiddleware> _logger;
 
     private const long FunnelRefusalLogIntervalMs = 60_000;
@@ -40,12 +40,11 @@ public class AdminAuthMiddleware
         "/admin/auth/signin/"
     ];
 
-    public AdminAuthMiddleware(RequestDelegate next, IConfiguration configuration, ILogger<AdminAuthMiddleware> logger)
+    public AdminAuthMiddleware(RequestDelegate next, IAdminTokenStore adminTokens, ILogger<AdminAuthMiddleware> logger)
     {
         _next = next;
         _logger = logger;
-        _adminToken = LegacyNames.GetEnvironmentVariable("ADMIN_TOKEN")
-            ?? configuration.GetValue<string>("Adjutant:AdminToken");
+        _adminTokens = adminTokens;
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -60,20 +59,10 @@ public class AdminAuthMiddleware
         }
 
         // From the public internet the admin token is never accepted, in any form (see
-        // FunnelRequest). Handled before the no-token passthrough below, so an unconfigured token
-        // cannot leave the REST API open to the internet either.
+        // FunnelRequest).
         if (FunnelRequest.IsFunnel(context))
         {
             await HandleFunnelRequestAsync(context, path);
-            return;
-        }
-
-        // If no admin token is configured, allow access (development mode)
-        if (string.IsNullOrEmpty(_adminToken))
-        {
-            _logger.LogWarning("No admin token configured. Admin API is unprotected. " +
-                "Set ADJUTANT_ADMIN_TOKEN environment variable for production use.");
-            await _next(context);
             return;
         }
 
@@ -109,7 +98,7 @@ public class AdminAuthMiddleware
         var token = context.Request.Headers.Authorization.FirstOrDefault()?.Replace("Bearer ", "")
             ?? context.Request.Headers["X-Admin-Token"].FirstOrDefault();
 
-        if (!TokenMatches(token))
+        if (!_adminTokens.Matches(token))
         {
             _logger.LogWarning("Unauthorized admin API access attempt from {RemoteIp}",
                 context.Connection.RemoteIpAddress);
@@ -163,22 +152,6 @@ public class AdminAuthMiddleware
     /// <summary>True for a console session established with the admin token rather than a provider.</summary>
     public static bool IsTokenSession(ClaimsPrincipal user) =>
         user.FindFirst(AdminOidc.ProviderClaimType)?.Value == AdminSessionPolicy.TokenProvider;
-
-    /// <summary>
-    /// Fixed-time comparison against the configured admin token, so the token cannot be
-    /// recovered a character at a time from how quickly a request is rejected.
-    /// </summary>
-    private bool TokenMatches(string? presented)
-    {
-        if (string.IsNullOrEmpty(presented) || string.IsNullOrEmpty(_adminToken))
-            return false;
-
-        var presentedBytes = Encoding.UTF8.GetBytes(presented);
-        var expectedBytes = Encoding.UTF8.GetBytes(_adminToken);
-
-        return presentedBytes.Length == expectedBytes.Length &&
-               CryptographicOperations.FixedTimeEquals(presentedBytes, expectedBytes);
-    }
 
     private static bool IsExemptPath(string path)
     {

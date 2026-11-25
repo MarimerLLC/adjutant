@@ -12,7 +12,7 @@ The HTTP server exposes three surfaces with independent protection:
 |---|---|
 | `/` (MCP protocol), `/attachments/*` | MCP API key — `Authorization: Bearer <key>` or `X-Api-Key: <key>` — or an MCP OAuth access token issued by this server |
 | `/connect/*`, `/.well-known/oauth-*` | MCP OAuth authorization server; only offered while an admin sign-in provider is configured |
-| `/admin/*` (REST API) | Admin token — `ADJUTANT_ADMIN_TOKEN`; tailnet only (see below) |
+| `/admin/*` (REST API) | Admin token — `ADJUTANT_ADMIN_TOKEN`, or the one generated at first start; tailnet only (see below) |
 | `/admin/ui/*` (Blazor console) | Session cookie, issued after OIDC sign-in or admin-token login (admin-token login from the tailnet only) |
 | `/health`, `/health/ready` | Anonymous (Kubernetes probes) |
 
@@ -24,12 +24,25 @@ header, added by Tailscale's proxy. On those requests the admin token is never a
 - the console login page hides the token field, and refuses a token login posted anyway;
 - a console session that was established with the token counts as signed out, so its cookie
   cannot be replayed from the internet;
-- the REST API under `/admin/*` returns `401`, even with the correct token, and even when no
-  token is configured (where it would otherwise be open).
+- the REST API under `/admin/*` returns `401`, even with the correct token.
 
 Provider sign-in, MCP API keys and MCP OAuth work the same over Funnel as inside the tailnet. The
 header only ever removes access, so a tailnet client that sets it itself only locks itself out.
 See [Public access](PUBLIC-ACCESS.md) for exposing the server.
+
+### Admin token
+
+- **Never absent.** With no `ADJUTANT_ADMIN_TOKEN` / `Adjutant:AdminToken`, the server generates
+  a token at first start and prints it once in the startup log, so a fresh install's admin API
+  and console login are never open. A missing token matches nothing; there is no
+  "unprotected" mode.
+- **Hashed at rest.** Only the generated token's SHA-256 is written, to `admin-token.json`.
+  Delete the file and restart to get a new one.
+- **Configured wins.** A configured token replaces the generated one, which then stops working.
+- **Fixed-time comparison** of SHA-256 digests, shared by the REST API and the login page, so
+  neither the token's characters nor its length show in response times.
+
+See [Configuration](configuration.md#the-admin-token).
 
 ### MCP API Keys
 

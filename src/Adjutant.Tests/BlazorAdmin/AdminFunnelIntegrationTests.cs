@@ -123,14 +123,15 @@ public sealed partial class AdminFunnelIntegrationTests
     }
 
     [TestMethod]
-    public async Task TheRestApiIsClosedOverFunnelEvenWithNoAdminTokenConfigured()
+    public async Task TheRestApiIsClosedWithNoAdminTokenConfigured()
     {
-        // With no token the REST API is open (development mode); never to the internet.
+        // With no token configured the server generates one (#131), so an anonymous request is
+        // refused from inside the tailnet as well as over Funnel.
         _app.Dispose();
         _app = new AdjutantApp();
         using var client = _app.CreateClient();
 
-        Assert.AreEqual(HttpStatusCode.OK, (await client.SendAsync(Get("/admin/accounts", viaFunnel: false))).StatusCode);
+        Assert.AreEqual(HttpStatusCode.Unauthorized, (await client.SendAsync(Get("/admin/accounts", viaFunnel: false))).StatusCode);
         Assert.AreEqual(HttpStatusCode.Unauthorized, (await client.SendAsync(Get("/admin/accounts", viaFunnel: true))).StatusCode);
     }
 

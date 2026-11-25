@@ -115,6 +115,18 @@ public class Program
         builder.Services.AddSingleton<IMcpKeyStore>(sp =>
             new FileMcpKeyStore(sp.GetRequiredService<ILogger<FileMcpKeyStore>>()));
 
+        // Break-glass admin token for the admin REST API and console token login. The operator's
+        // token wins; without one, a token is generated at first start (AdminAuthStartup).
+        builder.Services.AddSingleton<IAdminTokenStore>(sp =>
+        {
+            var configuration = sp.GetRequiredService<IConfiguration>();
+            return new AdminTokenStore(
+                sp.GetRequiredService<ILogger<AdminTokenStore>>(),
+                () => LegacyNames.GetEnvironmentVariable("ADMIN_TOKEN") is { Length: > 0 } fromEnvironment
+                    ? fromEnvironment
+                    : configuration.GetValue<string>("Adjutant:AdminToken"));
+        });
+
         // Admin console sign-in services.
         builder.Services.AddSingleton<IAdminUserStore>(sp =>
             new AdminUserStore(sp.GetRequiredService<ILogger<AdminUserStore>>()));

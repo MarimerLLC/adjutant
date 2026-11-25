@@ -61,20 +61,6 @@ public class AdminAuthConfiguration
     /// </summary>
     public bool IsTokenLoginAllowed(IAdminUserStore users) =>
         IsTokenLoginAllowed(users.HasRecordedSignIn(ConfiguredProviderSchemes()));
-
-    /// <summary>
-    /// Whether the console login page may offer the token form. When no admin token is
-    /// configured, the form accepts any input. Outside Development that is only acceptable
-    /// before any provider is configured, so automatic resolution keeps the 2.0.0 rule there:
-    /// configuring a provider closes it. An explicit <see cref="AllowTokenLogin"/> still wins.
-    /// </summary>
-    public bool IsTokenFormOffered(bool oidcSignInRecorded, bool adminTokenConfigured, bool development)
-    {
-        if (AllowTokenLogin is null && !adminTokenConfigured && !development && ConfiguredProviderSchemes().Any())
-            return false;
-
-        return IsTokenLoginAllowed(oidcSignInRecorded);
-    }
 }
 
 /// <summary>

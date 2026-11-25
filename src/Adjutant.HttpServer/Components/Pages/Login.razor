@@ -2,8 +2,6 @@
 @attribute [AllowAnonymous]
 @layout LoginLayout
 @using System.Security.Claims
-@using System.Security.Cryptography
-@using System.Text
 @using Adjutant.Core.Configuration
 @using Adjutant.Core.Security
 @using Adjutant.HttpServer.BlazorAdmin
@@ -11,10 +9,9 @@
 @using Microsoft.AspNetCore.Authentication
 @using Microsoft.AspNetCore.Authentication.Cookies
 @using Microsoft.Extensions.Options
-@inject IConfiguration Configuration
 @inject IOptionsMonitor<AdminAuthConfiguration> AdminAuth
 @inject IAdminUserStore AdminUsers
-@inject IHostEnvironment HostEnvironment
+@inject IAdminTokenStore AdminTokens
 @inject NavigationManager Navigation
 @inject IHttpContextAccessor HttpContextAccessor
 
@@ -156,10 +153,7 @@
             return;
         }
 
-        var expectedToken = ExpectedToken();
-
-        // In dev mode (no token configured), allow any login
-        if (!string.IsNullOrEmpty(expectedToken) && !TokensMatch(Input!.Token, expectedToken))
+        if (!AdminTokens.Matches(Input!.Token))
         {
             _errorMessage = "Invalid admin token. Please try again.";
             return;
@@ -185,38 +179,12 @@
         Navigation.NavigateTo(LocalReturnUrl.Sanitize(ReturnUrl), forceLoad: true);
     }
 
-    private string? ExpectedToken() =>
-        LegacyNames.GetEnvironmentVariable("ADMIN_TOKEN")
-        ?? Configuration.GetValue<string>("Adjutant:AdminToken");
-
     /// <summary>
-    /// With no admin token configured the form accepts anything, so it is only offered where
-    /// <see cref="AdminAuthConfiguration.IsTokenFormOffered"/> allows that.
+    /// The form only ever accepts the admin token (<see cref="IAdminTokenStore"/>, which always
+    /// holds one once the server has started), so whether it is offered depends on the
+    /// break-glass rule alone.
     /// </summary>
-    private bool TokenFormOffered()
-    {
-        var config = AdminAuth.CurrentValue;
-        return config.IsTokenFormOffered(
-            AdminUsers.HasRecordedSignIn(config.ConfiguredProviderSchemes()),
-            adminTokenConfigured: !string.IsNullOrEmpty(ExpectedToken()),
-            development: HostEnvironment.IsDevelopment());
-    }
-
-    /// <summary>
-    /// Fixed-time comparison so the token cannot be recovered a character at a time from how
-    /// long the page takes to reject it.
-    /// </summary>
-    private static bool TokensMatch(string? presented, string expected)
-    {
-        if (string.IsNullOrEmpty(presented))
-            return false;
-
-        var presentedBytes = Encoding.UTF8.GetBytes(presented);
-        var expectedBytes = Encoding.UTF8.GetBytes(expected);
-
-        return presentedBytes.Length == expectedBytes.Length &&
-               CryptographicOperations.FixedTimeEquals(presentedBytes, expectedBytes);
-    }
+    private bool TokenFormOffered() => AdminAuth.CurrentValue.IsTokenLoginAllowed(AdminUsers);
 
     private sealed class LoginInput
     {
