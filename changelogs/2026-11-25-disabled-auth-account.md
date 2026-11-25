@@ -1,7 +1,8 @@
 # JSON Calendars Stop Borrowing a Disabled Account's Credentials
 
-**Date**: November 25, 2026
-**Issue**: [#133](https://github.com/MarimerLLC/adjutant/issues/133)
+**Date:** 2026-11-25
+**Version:** 2.2.1
+**Issue:** [#133](https://github.com/MarimerLLC/adjutant/issues/133)
 
 ---
 
