@@ -97,6 +97,7 @@ public class RemoveAccountCommand : AsyncCommand<RemoveAccountCommand.Settings>
             }
 
             var account = accounts[accountIndex];
+            var owned = TryGetElement(account, out var owner, "Owner", "owner") && owner.ValueKind != JsonValueKind.Null;
 
             // Get account details - support both PascalCase and camelCase
             string? provider = null;
@@ -112,7 +113,7 @@ public class RemoveAccountCommand : AsyncCommand<RemoveAccountCommand.Settings>
             AnsiConsole.WriteLine();
 
             // Check if account is logged in
-            var isLoggedIn = await CheckIfLoggedInAsync(account, settings.AccountId, provider ?? "");
+            var isLoggedIn = !owned && await CheckIfLoggedInAsync(account, settings.AccountId, provider ?? "");
 
             if (isLoggedIn)
             {
@@ -163,6 +164,8 @@ public class RemoveAccountCommand : AsyncCommand<RemoveAccountCommand.Settings>
             AnsiConsole.WriteLine();
 
             // Remove from config and save
+            if (owned)
+                ConfigurationPaths.DeleteAccountCredentialFiles(settings.AccountId);
             await RemoveAccountFromConfigAsync(configPath, root, accounts, accountIndex);
 
             AnsiConsole.MarkupLine($"[green]✓ Successfully removed account '{settings.AccountId}'[/]");

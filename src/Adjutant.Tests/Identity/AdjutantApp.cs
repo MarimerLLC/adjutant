@@ -59,9 +59,10 @@ internal sealed partial class AdjutantApp : WebApplicationFactory<Adjutant.HttpS
     public FakeMetadataHost MetadataHost { get; } = new();
 
     /// <summary>An owner allow-list and a configured Google provider (never contacted), so OAuth is offered.</summary>
-    public static object DefaultSettings(string[]? allowedEmails = null, bool enableOAuth = true, object[]? accounts = null) => new
+    public static object DefaultSettings(
+        string[]? allowedEmails = null, bool enableOAuth = true, object[]? accounts = null, bool requireApiKey = true) => new
     {
-        Adjutant = new { Accounts = accounts ?? [], Mcp = new { EnableOAuth = enableOAuth } },
+        Adjutant = new { Accounts = accounts ?? [], Mcp = new { EnableOAuth = enableOAuth, RequireApiKey = requireApiKey } },
         AdminAuth = new
         {
             AllowedEmails = allowedEmails ?? [Owner],

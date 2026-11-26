@@ -180,6 +180,8 @@ public static class AdminEndpoints
         var updated = new AccountInfo
         {
             Id = accountId,
+            Owner = existing.Owner,
+            OrganizationId = existing.OrganizationId,
             DisplayName = request.DisplayName,
             Provider = existing.Provider, // immutable
             Domains = request.Domains,

@@ -106,7 +106,7 @@
                         <label class="form-check">
                             <input class="form-check-input" type="radio" name="@McpAccountSelection.ModeField"
                                    value="@McpAccountSelection.All" required />
-                            All accounts, including accounts added later
+                            All accounts available to you, including accounts added later
                         </label>
                         @if (_accounts.Count > 0)
                         {
@@ -191,6 +191,7 @@
         _redirectHost = redirect.IsDefaultPort ? redirect.Host : $"{redirect.Host}:{redirect.Port}";
         _loopback = redirect.IsLoopback;
         if (_canApprove)
-            _accounts = (await AccountRegistry.GetAllAccountsAsync()).OrderBy(a => a.DisplayName).ToList();
+            _accounts = (await McpAccountSelection.ListAsync(AccountRegistry, AdminSessionPolicy.GetOwner(user)))
+                .OrderBy(a => a.DisplayName).ToList();
     }
 }

@@ -4,10 +4,12 @@
 @using Adjutant.Auth
 @using Adjutant.Core.Models
 @using Adjutant.Core.Security
+@using Adjutant.Core.Services
 @using Adjutant.HttpServer.BlazorAdmin
 @inject IAccountConfigurationService ConfigService
 @inject NavigationManager Navigation
 @inject PasswordProtector PasswordProtector
+@inject AuthenticationStateProvider AuthenticationState
 
 <h1 class="mb-4">
     <i class="bi bi-plus-circle me-2"></i>Add Account
@@ -386,6 +388,7 @@ else
 
     protected override async Task OnInitializedAsync()
     {
+        _model.Owner = AdminSessionPolicy.GetOwner((await AuthenticationState.GetAuthenticationStateAsync()).User);
         await LoadMicrosoftAccountsAsync();
     }
 
@@ -396,6 +399,7 @@ else
             var all = await ConfigService.GetAllAccountsFromConfigAsync();
             _microsoftAccounts = all
                 .Where(a => a.Provider is "microsoft365" or "outlook.com")
+                .Where(a => CredentialDelegation.HasSameOwner(a, _model.Owner, _model.OrganizationId))
                 .ToList();
         }
         catch
@@ -442,7 +446,7 @@ else
 
     private void ClearProvider()
     {
-        _model = new CreateAccountFormModel();
+        _model = new CreateAccountFormModel { Owner = _model.Owner };
         _error = null;
         _success = false;
     }

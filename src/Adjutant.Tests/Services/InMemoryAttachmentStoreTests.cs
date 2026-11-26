@@ -138,6 +138,26 @@ public class InMemoryAttachmentStoreTests
     }
 
     [TestMethod]
+    public void OwnedAttachments_IsolateConsumptionAndByteLimits()
+    {
+        var caller = new TestCallerContext { Current = new("owner@example.com", "key-1", []) };
+        var store = CreateStore(new AttachmentStoreOptions { MaxBytesPerOwner = 10, MaxTotalBytes = 20 },
+            callerContext: caller);
+        var first = store.Put("first", null, new byte[8])!;
+        var empty = store.Put("empty", null, [])!;
+        Assert.IsNull(store.Put("too much", null, new byte[3]));
+
+        caller.Current = new("other@example.com", "key-2", []);
+        Assert.IsNull(store.TryConsume(first.Id));
+        Assert.IsNotNull(store.Put("second", null, new byte[8]));
+
+        caller.Current = new("OWNER@example.com", "key-3", []);
+        Assert.AreSame(first, store.TryConsume(first.Id));
+        Assert.IsTrue(store.TryDelete(empty.Id));
+        Assert.IsNotNull(store.Put("third", null, new byte[8]));
+    }
+
+    [TestMethod]
     public void TryRead_ExpiredEntry_ReturnsNullAndEvicts()
     {
         var time = new FakeTimeProvider(DateTimeOffset.UtcNow);

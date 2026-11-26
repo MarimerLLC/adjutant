@@ -3,6 +3,7 @@ using Spectre.Console;
 using Spectre.Console.Cli;
 using Adjutant.Core.Services;
 using Adjutant.Core.Configuration;
+using Adjutant.Core.Models;
 using System.Text.Json;
 using System.ComponentModel;
 
@@ -113,41 +114,27 @@ public class ReauthenticateAccountCommand : AsyncCommand<ReauthenticateAccountCo
                 providerConfigElem.Deserialize<Dictionary<string, string>>() ?? new(),
                 StringComparer.OrdinalIgnoreCase);
 
-            // For JSON accounts with authAccountId, redirect to reauth the referenced account
+            // For a OneDrive JSON account, reauthenticate the lender when it can be used.
             if (provider is "json" or "json-calendar")
             {
-                if (providerConfig.TryGetValue("authAccountId", out var authAcctId))
+                var borrower = AccountConfigurationEntry.Read(account);
+                if (CredentialDelegation.GetLenderId(borrower) is { } authAcctId)
                 {
-                    AnsiConsole.MarkupLine($"[yellow]JSON account '{settings.AccountId}' uses credentials from account '{authAcctId}'.[/]");
-                    AnsiConsole.MarkupLine($"[yellow]Reauthenticating '{authAcctId}' instead (with Files.Read scope)...[/]");
-                    AnsiConsole.WriteLine();
-
-                    // Find the referenced account
                     var refAccount = accounts?.FirstOrDefault(a =>
                         (a.TryGetValue("Id", out var idElem) || a.TryGetValue("id", out idElem)) &&
-                        idElem.GetString() == authAcctId);
+                        string.Equals(idElem.GetString(), authAcctId, StringComparison.OrdinalIgnoreCase));
+                    var lender = refAccount is null ? null : AccountConfigurationEntry.Read(refAccount);
 
-                    if (refAccount == null)
+                    var problem = CredentialDelegation.CheckLender(borrower, authAcctId, lender);
+                    if (problem is not null || lender is null)
                     {
-                        AnsiConsole.MarkupLine($"[red]Error: Referenced account '{authAcctId}' not found.[/]");
+                        AnsiConsole.MarkupLine($"[red]Error: {Markup.Escape(problem ?? "The auth account was not found.")}[/]");
                         return 1;
                     }
 
-                    if (!refAccount.TryGetValue("ProviderConfig", out var refPcElem) &&
-                        !refAccount.TryGetValue("providerConfig", out refPcElem))
-                    {
-                        AnsiConsole.MarkupLine($"[red]Error: Referenced account '{authAcctId}' missing ProviderConfig.[/]");
-                        return 1;
-                    }
-
-                    var refProviderConfig = new Dictionary<string, string>(
-                        refPcElem.Deserialize<Dictionary<string, string>>() ?? new(),
-                        StringComparer.OrdinalIgnoreCase);
-                    string? refProvider = null;
-                    if (refAccount.TryGetValue("Provider", out var refProvElem) || refAccount.TryGetValue("provider", out refProvElem))
-                        refProvider = refProvElem.GetString();
-
-                    return await ReauthenticateMicrosoftAccountAsync(authAcctId, refProviderConfig, refProvider ?? "outlook.com", accounts);
+                    AnsiConsole.MarkupLine($"[yellow]Reauthenticating '{Markup.Escape(lender.Id)}' with Files.Read scope for '{Markup.Escape(borrower.Id)}'...[/]");
+                    AnsiConsole.WriteLine();
+                    return await ReauthenticateMicrosoftAccountAsync(lender, accounts);
                 }
                 else if (providerConfig.TryGetValue("clientId", out _))
                 {
@@ -211,7 +198,7 @@ public class ReauthenticateAccountCommand : AsyncCommand<ReauthenticateAccountCo
             }
             else
             {
-                return await ReauthenticateMicrosoftAccountAsync(settings.AccountId, providerConfig, provider, accounts);
+                return await ReauthenticateMicrosoftAccountAsync(AccountConfigurationEntry.Read(account), accounts);
             }
         }
         catch (Exception ex)
@@ -221,11 +208,12 @@ public class ReauthenticateAccountCommand : AsyncCommand<ReauthenticateAccountCo
         }
     }
 
-    private async Task<int> ReauthenticateMicrosoftAccountAsync(string accountId, Dictionary<string, string> providerConfig, string provider,
-        List<Dictionary<string, JsonElement>>? allAccounts = null)
+    private async Task<int> ReauthenticateMicrosoftAccountAsync(AccountInfo account, List<Dictionary<string, JsonElement>>? allAccounts)
     {
-        providerConfig.TryGetValue("tenantId", out var tenantId);
-        providerConfig.TryGetValue("clientId", out var clientId);
+        var accountId = account.Id;
+        var provider = account.Provider.Length > 0 ? account.Provider : "outlook.com";
+        account.ProviderConfig.TryGetValue("tenantId", out var tenantId);
+        account.ProviderConfig.TryGetValue("clientId", out var clientId);
 
         if (string.IsNullOrEmpty(tenantId) || string.IsNullOrEmpty(clientId))
         {
@@ -237,31 +225,11 @@ public class ReauthenticateAccountCommand : AsyncCommand<ReauthenticateAccountCo
         var scopeList = new List<string>(Adjutant.Core.Constants.OutlookComScopes.Default);
 
         // Check if any JSON calendar accounts reference this account for OneDrive access
-        if (allAccounts != null)
+        if (allAccounts is not null &&
+            CredentialDelegation.FindBorrowers(allAccounts.Select(AccountConfigurationEntry.Read), account).Count > 0)
         {
-            var needsFilesRead = allAccounts.Any(a =>
-            {
-                var p = "";
-                if (a.TryGetValue("provider", out var pElem) || a.TryGetValue("Provider", out pElem))
-                    p = pElem.GetString() ?? "";
-                if (p is not ("json" or "json-calendar"))
-                    return false;
-
-                if (!a.TryGetValue("providerConfig", out var pcElem) && !a.TryGetValue("ProviderConfig", out pcElem))
-                    return false;
-
-                var pc = pcElem.Deserialize<Dictionary<string, string>>() ?? new();
-                if (!pc.TryGetValue("authAccountId", out var authId) && !pc.TryGetValue("AuthAccountId", out authId))
-                    return false;
-
-                return authId == accountId;
-            });
-
-            if (needsFilesRead)
-            {
-                scopeList.Add("Files.Read");
-                AnsiConsole.MarkupLine("[yellow]Including Files.Read scope (needed by JSON calendar accounts using this account's credentials).[/]");
-            }
+            scopeList.Add("Files.Read");
+            AnsiConsole.MarkupLine("[yellow]Including Files.Read scope (needed by JSON calendar accounts using this account's credentials).[/]");
         }
 
         var scopes = scopeList.ToArray();

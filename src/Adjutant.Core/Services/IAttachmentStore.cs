@@ -1,3 +1,5 @@
+using Adjutant.Core.Models;
+
 namespace Adjutant.Core.Services;
 
 /// <summary>
@@ -10,20 +12,20 @@ public interface IAttachmentStore
     /// <summary>
     /// Stores <paramref name="bytes"/> under a freshly generated ID.
     /// Attachments fetched from an account retain its ID for later access checks.
-    /// Returns <c>null</c> if the global byte budget would be exceeded.
+    /// Returns <c>null</c> if an attachment or cache byte limit would be exceeded.
     /// </summary>
     StoredAttachment? Put(string name, string? contentType, byte[] bytes, string? sourceAccountId = null);
 
     /// <summary>
     /// Atomically removes and returns the entry. Returns <c>null</c> if the
-    /// ID is unknown, expired, or outside the caller's account scope. Use this for single-use consumption
+    /// ID is unknown, expired, or outside the caller's access. Use this for single-use consumption
     /// paths (e.g. send_email).
     /// </summary>
     StoredAttachment? TryConsume(string attachmentId);
 
     /// <summary>
     /// Returns the entry without removing it. Returns <c>null</c> if the ID
-    /// is unknown, expired, or outside the caller's account scope. The entry remains in the store until consumed,
+    /// is unknown, expired, or outside the caller's access. The entry remains in the store until consumed,
     /// explicitly deleted, or TTL'd out. Use this for the HTTP GET path
     /// where the caller may want to read first and consume later.
     /// </summary>
@@ -31,7 +33,7 @@ public interface IAttachmentStore
 
     /// <summary>
     /// Removes the entry if present. Returns true if removed, false if it
-    /// was absent or outside the caller's account scope. No-throw.
+    /// was absent or outside the caller's access. No-throw.
     /// </summary>
     bool TryDelete(string attachmentId);
 
@@ -46,6 +48,8 @@ public interface IAttachmentStore
 public sealed class StoredAttachment
 {
     public required string Id { get; init; }
+    public string? Owner { get; init; }
+    public string OrganizationId { get; init; } = AccountInfo.DefaultOrganizationId;
     public required string Name { get; init; }
     public string? ContentType { get; init; }
     public string? SourceAccountId { get; init; }
@@ -57,5 +61,6 @@ public sealed class AttachmentStoreOptions
 {
     public int MaxBytesPerAttachment { get; set; } = 10 * 1024 * 1024;
     public long MaxTotalBytes { get; set; } = 100L * 1024 * 1024;
+    public long MaxBytesPerOwner { get; set; } = 50L * 1024 * 1024;
     public TimeSpan Ttl { get; set; } = TimeSpan.FromMinutes(15);
 }

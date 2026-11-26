@@ -100,9 +100,8 @@ the registration and federates only the *sign-in* to the admin console's provide
 - **Revalidated on every request.** An OAuth token's owner must still be on the allow-list, with the
   same bound provider subject, and OAuth must still be offered; otherwise the request gets `401`.
   The token's own entry and the approval it came from must also still be valid in `identity.db`.
-- **Disconnect.** **MCP Access** in the admin console lists the connected apps. **Disconnect**
-  revokes an app's approvals and tokens: its access token fails on the next request and its refresh
-  token is refused, so it has to be approved on the consent page again.
+- **Disconnect.** **MCP Access** lists the apps approved by the signed-in user. **Disconnect**
+  revokes that user's grants and tokens for the app. It can connect again through the consent page.
 - **Keys at rest.** Token signing and encryption keys are generated on first start and stored in
   `oauth-keys/`, encrypted with the DataProtection keyring, unless supplied through configuration.
   Clients, approvals and refresh tokens are in `identity.db`; token values are stored hashed by
@@ -110,19 +109,34 @@ the registration and federates only the *sign-in* to the admin console's provide
 
 ### MCP account scoping
 
-For a new API key or OAuth approval, choose **All accounts, including accounts added later** or
-**Selected accounts**. A selected-account grant stays limited to those account IDs, including
-after an OAuth token refresh. Existing keys and approvals, the first-start key, and the
-`ADJUTANT_MCP_KEY` environment key retain access to all accounts.
+For a new API key or OAuth approval, choose **All accounts available to you, including
+accounts added later** or **Selected accounts**. The server checks ownership and credential scope
+on each MCP request. A selected-account grant stays limited to those account IDs after a token
+refresh. An account owned by someone else returns the same error as an unknown account. For an
+accessible account outside the selected scope, the server returns an authorization error.
+[Per-account permissions](#per-account-permissions) govern which operations are allowed.
 
-MCP tools list and route only within the credential's account scope. Naming an account outside
-the scope returns an authorization error. [Per-account permissions](#per-account-permissions)
-still determine which operations are allowed. Stored attachments fetched from an email retain
-the scope check on their source account. Files uploaded directly to `/attachments` have no
-source account.
+Accounts and keys created in the console after signing in with Google or Microsoft are assigned
+to that sign-in email. Removing the owner from the admin allow-list cuts off their owned keys
+and connected apps. A OneDrive calendar can use another account's Microsoft credentials only
+when both accounts have the same owner and organization.
 
-Keep `Adjutant:Mcp:RequireApiKey` enabled to enforce account scoping. Setting it to `false`
-allows anonymous access to the MCP and attachment endpoints.
+Accounts without an `Owner` remain in the legacy shared scope. Existing keys without an owner,
+keys from admin-token sessions, and an unassigned `ADJUTANT_MCP_KEY` can use only that scope.
+Existing OAuth approvals still work for their original user and can reach legacy shared
+accounts within their grant. The default organization is `default`.
+
+Before adding more people to the allow-list, assign each private account an `Owner` in
+`Adjutant:Accounts` in `appsettings.json` and use an owned key or OAuth grant for its owner.
+Use the person's allow-listed sign-in email. Assign a OneDrive calendar and its lender to the
+same owner. When replacing an account with one for a different owner, use a new account ID and
+authenticate it again. Provider credential caches use the account ID. Account configuration and
+provider sign-in still use the instance admin console.
+
+Files in the attachment cache belong to the caller who uploaded or fetched them. A fetched file
+also requires current access to its source account. Owned attachments have a 50 MiB limit per user
+and share the 100 MiB server limit. Setting `Adjutant:Mcp:RequireApiKey` to `false` permits anonymous
+access to the legacy shared scope and to attachments staged without an owner.
 
 ### Admin Console Sign-In
 

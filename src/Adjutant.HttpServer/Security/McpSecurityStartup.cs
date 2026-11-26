@@ -25,7 +25,7 @@ public static class McpSecurityStartup
         {
             logger.LogWarning(
                 "MCP API key enforcement is DISABLED (Adjutant:Mcp:RequireApiKey=false). The MCP and " +
-                "attachment endpoints accept any caller that can reach them. This is only safe on a " +
+                "attachment endpoints allow anonymous access to legacy shared accounts and attachments. This is only safe on a " +
                 "private network — never expose this server publicly in this state.");
             return;
         }

@@ -101,6 +101,25 @@ public static class ConfigurationPaths
             accountId);
     }
 
+    /// <summary>Deletes the on-disk credential caches for an account ID.</summary>
+    public static void DeleteAccountCredentialFiles(string accountId)
+    {
+        if (string.IsNullOrWhiteSpace(accountId) || accountId is "." or ".." ||
+            accountId.Contains('\\') || accountId.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
+            (OperatingSystem.IsWindows() && (accountId.EndsWith('.') || accountId.EndsWith(' '))))
+            throw new ArgumentException("An account ID must be a single valid file name.", nameof(accountId));
+
+        File.Delete(GetMsalCachePath(accountId));
+        try
+        {
+            Directory.Delete(GetGoogleCredentialsDirectory(accountId), recursive: true);
+        }
+        catch (DirectoryNotFoundException)
+        {
+            // The account has no Google credential cache.
+        }
+    }
+
     /// <summary>
     /// Gets the directory used by ASP.NET DataProtection to persist its key ring.
     /// Lives under the data directory so it follows the existing ADJUTANT_CONFIG override

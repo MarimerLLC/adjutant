@@ -6,9 +6,7 @@ namespace Adjutant.Core.Services;
 /// Rules for one account using another account's credentials. Today the only case is a JSON
 /// calendar on OneDrive that names a Microsoft account in <c>providerConfig.authAccountId</c>:
 /// the JSON account (the borrower) reads its files with the named account's (the lender's)
-/// token. Every check on whether that is allowed lives in <see cref="CheckLender"/>, so a new
-/// rule (for example, that both accounts belong to the same user once accounts have owners)
-/// is added in one place and applies to every caller.
+/// token. Every check on whether that is allowed lives in <see cref="CheckLender"/>.
 /// </summary>
 public static class CredentialDelegation
 {
@@ -36,12 +34,17 @@ public static class CredentialDelegation
     }
 
     /// <summary>
-    /// The accounts that borrow <paramref name="lenderId"/>'s credentials. The admin console
+    /// The accounts that borrow <paramref name="lender"/>'s credentials. The admin console
     /// lists them before an account is disabled or deleted, and sign-in uses them to decide
     /// whether the lender needs the Files.Read scope.
     /// </summary>
-    public static IReadOnlyList<AccountInfo> FindBorrowers(IEnumerable<AccountInfo> accounts, string lenderId) =>
-        accounts.Where(a => string.Equals(GetLenderId(a), lenderId, StringComparison.Ordinal)).ToList();
+    public static IReadOnlyList<AccountInfo> FindBorrowers(IEnumerable<AccountInfo> accounts, AccountInfo lender) =>
+        accounts.Where(a => string.Equals(GetLenderId(a), lender.Id, StringComparison.OrdinalIgnoreCase) &&
+                            HasSameOwner(a, lender.Owner, lender.OrganizationId)).ToList();
+
+    public static bool HasSameOwner(AccountInfo account, string? owner, string organizationId) =>
+        string.Equals(account.Owner, owner, StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(account.OrganizationId, organizationId, StringComparison.Ordinal);
 
     /// <summary>
     /// Why <paramref name="borrower"/> may not use the credentials of <paramref name="lender"/>
@@ -50,8 +53,8 @@ public static class CredentialDelegation
     /// </summary>
     public static string? CheckLender(AccountInfo borrower, string lenderId, AccountInfo? lender)
     {
-        if (lender is null)
-            return $"Account '{borrower.Id}' references auth account '{lenderId}' which was not found. " +
+        if (lender is null || !HasSameOwner(borrower, lender.Owner, lender.OrganizationId))
+            return $"Account '{borrower.Id}' references auth account '{lenderId}' which was not found or is not accessible. " +
                    $"Check the '{AuthAccountIdKey}' in providerConfig.";
 
         if (!lender.Enabled)

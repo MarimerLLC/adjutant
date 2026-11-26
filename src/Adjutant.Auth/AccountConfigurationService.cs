@@ -56,6 +56,9 @@ public sealed class AccountConfigurationService : IAccountConfigurationService
             // Check for duplicate
             if (FindAccountIndex(accountsArray, account.Id) >= 0)
                 throw new InvalidOperationException($"Account '{account.Id}' already exists.");
+            if (account.Owner is not null && (File.Exists(ConfigurationPaths.GetMsalCachePath(account.Id)) ||
+                Directory.Exists(ConfigurationPaths.GetGoogleCredentialsDirectory(account.Id))))
+                throw new InvalidOperationException($"Account '{account.Id}' has cached credentials. Choose a new account ID.");
 
             accountsArray.Add(AccountInfoToNode(account));
             await WriteConfigAsync(root, ct);
@@ -79,7 +82,12 @@ public sealed class AccountConfigurationService : IAccountConfigurationService
             if (index < 0)
                 throw new InvalidOperationException($"Account '{account.Id}' not found.");
 
-            accountsArray[index] = AccountInfoToNode(account);
+            // An edit may have started before the operator reassigned the account.
+            var current = accountsArray[index]?.AsObject();
+            var updated = AccountInfoToNode(account);
+            updated["Owner"] = GetStringProperty(current, "Owner");
+            updated["OrganizationId"] = GetStringProperty(current, "OrganizationId") ?? AccountInfo.DefaultOrganizationId;
+            accountsArray[index] = updated;
             await WriteConfigAsync(root, ct);
 
             _logger.LogInformation("Updated account '{AccountId}'", account.Id);
@@ -106,6 +114,11 @@ public sealed class AccountConfigurationService : IAccountConfigurationService
             // Capture provider before removal for credential clearing
             var node = accountsArray[index]?.AsObject();
             provider = GetStringProperty(node, "Provider");
+            if (GetStringProperty(node, "Owner") is not null)
+            {
+                ConfigurationPaths.DeleteAccountCredentialFiles(GetStringProperty(node, "Id") ?? accountId);
+                clearCredentials = false;
+            }
 
             accountsArray.RemoveAt(index);
             await WriteConfigAsync(root, ct);
@@ -232,11 +245,13 @@ public sealed class AccountConfigurationService : IAccountConfigurationService
     /// <summary>
     /// Converts an AccountInfo to a JsonNode (always PascalCase output).
     /// </summary>
-    private static JsonNode AccountInfoToNode(AccountInfo account)
+    private static JsonObject AccountInfoToNode(AccountInfo account)
     {
         var obj = new JsonObject
         {
             ["Id"] = account.Id,
+            ["Owner"] = account.Owner,
+            ["OrganizationId"] = account.OrganizationId,
             ["DisplayName"] = account.DisplayName,
             ["Provider"] = account.Provider,
             ["Enabled"] = account.Enabled,
@@ -318,6 +333,8 @@ public sealed class AccountConfigurationService : IAccountConfigurationService
             results.Add(new AccountInfo
             {
                 Id = id,
+                Owner = GetStringProperty(obj, "Owner"),
+                OrganizationId = GetStringProperty(obj, "OrganizationId") ?? AccountInfo.DefaultOrganizationId,
                 DisplayName = displayName,
                 Provider = provider,
                 Enabled = enabled,

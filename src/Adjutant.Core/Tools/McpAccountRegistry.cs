@@ -14,9 +14,21 @@ internal sealed class McpAccountRegistry(
 {
     public const string ServiceKey = "mcp";
 
-    public Task<AccountInfo?> GetAccountAsync(string accountId)
+    public async Task<AccountInfo?> GetAccountAsync(string accountId)
     {
         var caller = callers.Current;
+        var account = await registry.GetAccountAsync(accountId);
+        if (account is null)
+            return null;
+
+        if (!caller.CanAccessAccount(account))
+        {
+            logger.LogWarning(
+                "MCP credential {CredentialId} for user {UserId} cannot access account {AccountId}",
+                caller.CredentialId, caller.UserId, accountId);
+            return null;
+        }
+
         if (!caller.AllowsAccount(accountId))
         {
             logger.LogWarning(
@@ -25,7 +37,7 @@ internal sealed class McpAccountRegistry(
             throw new McpAccountAccessException(accountId);
         }
 
-        return registry.GetAccountAsync(accountId);
+        return account;
     }
 
     public async Task<IEnumerable<AccountInfo>> GetAllAccountsAsync() => Filter(await registry.GetAllAccountsAsync());
@@ -39,7 +51,7 @@ internal sealed class McpAccountRegistry(
     private IEnumerable<AccountInfo> Filter(IEnumerable<AccountInfo> accounts)
     {
         var caller = callers.Current;
-        return accounts.Where(account => caller.AllowsAccount(account.Id));
+        return accounts.Where(account => caller.CanAccessAccount(account) && caller.AllowsAccount(account.Id));
     }
 }
 

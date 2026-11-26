@@ -152,10 +152,6 @@ public class AddOutlookComAccountCommand : AsyncCommand<AddOutlookComAccountComm
                     ?? new List<Dictionary<string, object>>();
             }
 
-            // Check if account already exists
-            var existingIndex = accounts.FindIndex(a =>
-                a.TryGetValue("Id", out var id) && id?.ToString() == accountId);
-
             // Create new account config
             var domainList = domains.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .ToList();
@@ -180,16 +176,7 @@ public class AddOutlookComAccountCommand : AsyncCommand<AddOutlookComAccountComm
                 { "permissions", PermissionPrompt.ToConfigNode(permissions) }
             };
 
-            if (existingIndex >= 0)
-            {
-                AnsiConsole.MarkupLine($"[yellow]Account '{accountId}' already exists. Updating...[/]");
-                accounts[existingIndex] = newAccount;
-            }
-            else
-            {
-                AnsiConsole.MarkupLine($"[green]Adding new account '{accountId}'...[/]");
-                accounts.Add(newAccount);
-            }
+            AccountConfigurationEntry.AddOrReplace(accounts, accountId, newAccount);
 
             adjutantSection["Accounts"] = accounts;
             configDict["Adjutant"] = adjutantSection;

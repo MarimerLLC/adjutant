@@ -138,10 +138,6 @@ public class AddIcsAccountCommand : AsyncCommand<AddIcsAccountCommand.Settings>
                     ?? new List<Dictionary<string, object>>();
             }
 
-            // Check if account already exists
-            var existingIndex = accounts.FindIndex(a =>
-                a.TryGetValue("Id", out var id) && id?.ToString() == accountId);
-
             var providerConfig = new Dictionary<string, string>
             {
                 { "IcsUrl", icsUrl },
@@ -162,16 +158,7 @@ public class AddIcsAccountCommand : AsyncCommand<AddIcsAccountCommand.Settings>
                 { "Permissions", PermissionPrompt.ToConfigNode(permissions) }
             };
 
-            if (existingIndex >= 0)
-            {
-                AnsiConsole.MarkupLine($"[yellow]Account '{accountId}' already exists. Updating...[/]");
-                accounts[existingIndex] = newAccount;
-            }
-            else
-            {
-                AnsiConsole.MarkupLine($"[green]Adding new account '{accountId}'...[/]");
-                accounts.Add(newAccount);
-            }
+            AccountConfigurationEntry.AddOrReplace(accounts, accountId, newAccount);
 
             adjutantSection["Accounts"] = accounts;
             configDict["Adjutant"] = adjutantSection;

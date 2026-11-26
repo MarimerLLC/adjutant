@@ -1,5 +1,7 @@
 using System.Security.Claims;
+using Adjutant.Core.Models;
 using Adjutant.Core.Security;
+using Adjutant.HttpServer.Identity;
 using ModelContextProtocol;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -13,9 +15,10 @@ internal sealed class HttpMcpCallerContextAccessor(
     ILogger<HttpMcpCallerContextAccessor> logger) : IMcpCallerContextAccessor
 {
     private readonly AsyncLocal<McpCallerContext?> _activeCaller = new();
+    private static readonly McpCallerContext Anonymous = new(null, null, []);
 
     public McpCallerContext Current =>
-        _activeCaller.Value ?? GetCaller(http.HttpContext?.User) ?? McpCallerContext.Unrestricted;
+        _activeCaller.Value ?? GetCaller(http.HttpContext?.User) ?? Anonymous;
 
     public async ValueTask<CallToolResult> InvokeToolAsync(
         RequestContext<CallToolRequestParams> request,
@@ -30,7 +33,7 @@ internal sealed class HttpMcpCallerContextAccessor(
             throw new McpException("An authenticated MCP credential is required.");
 
         var previous = _activeCaller.Value;
-        _activeCaller.Value = caller ?? McpCallerContext.Unrestricted;
+        _activeCaller.Value = caller ?? Anonymous;
         try
         {
             logger.LogInformation("MCP tool {Tool} called by {UserId} with credential {CredentialId}",
@@ -51,11 +54,14 @@ internal sealed class HttpMcpCallerContextAccessor(
         var allowedAccounts = identity.FindAll(McpAccountSelection.ClaimType).Select(c => c.Value).ToArray();
         if (identity.AuthenticationType == McpApiKeyHandler.SchemeName
             && identity.FindFirst(McpApiKeyHandler.KeyIdClaimType)?.Value is { } keyId)
-            return new McpCallerContext(null, keyId, allowedAccounts);
+            return new McpCallerContext(identity.FindFirst(McpApiKeyHandler.OwnerClaimType)?.Value,
+                keyId, allowedAccounts,
+                identity.FindFirst(McpApiKeyHandler.OrganizationClaimType)?.Value ?? AccountInfo.DefaultOrganizationId);
 
         if (identity.FindFirst(Claims.Subject)?.Value is { } subject
             && identity.GetAuthorizationId() is { } authorizationId)
-            return new McpCallerContext(subject, authorizationId, allowedAccounts);
+            return new McpCallerContext(subject == AuthorizationEndpoint.AdminTokenSubject ? null : subject,
+                authorizationId, allowedAccounts);
 
         return null;
     }

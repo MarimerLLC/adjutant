@@ -17,13 +17,14 @@ public interface IMcpKeyStore
     /// </summary>
     /// <param name="label">What the key is for, so it can be told apart when revoking.</param>
     /// <param name="lifetime">How long the key works for, from now; null for a key that never expires.</param>
-    /// <param name="allowedAccounts">The allowed account IDs. Null or empty grants access to all accounts.</param>
-    (McpApiKey Key, string Secret) Create(string label, TimeSpan? lifetime = null, IEnumerable<string>? allowedAccounts = null);
+    /// <param name="allowedAccounts">The allowed account IDs. Null or empty grants access to all accounts available to the owner.</param>
+    /// <param name="owner">The owner's sign-in email, or null for the legacy shared scope.</param>
+    (McpApiKey Key, string Secret) Create(string label, TimeSpan? lifetime = null, IEnumerable<string>? allowedAccounts = null, string? owner = null);
 
     /// <summary>
-    /// Marks a key revoked. Returns false when the id is unknown or already revoked.
+    /// Marks an owned or legacy key revoked. Returns false when the key is unavailable to this caller.
     /// </summary>
-    bool Revoke(string id);
+    bool Revoke(string id, string? owner = null);
 
     /// <summary>
     /// Returns the key matching <paramref name="presentedSecret"/>, or null when the

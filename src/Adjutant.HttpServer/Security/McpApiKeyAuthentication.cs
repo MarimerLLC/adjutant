@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Text.Encodings.Web;
+using Adjutant.Core.Configuration;
 using Adjutant.Core.Security;
 using Adjutant.HttpServer.Identity;
 using Microsoft.AspNetCore.Authentication;
@@ -23,25 +24,31 @@ public sealed class McpApiKeyHandler : AuthenticationHandler<AuthenticationSchem
 
     /// <summary>Authorization policy that guards the MCP and attachment endpoints.</summary>
     public const string PolicyName = "McpClient";
+    internal const string OptionalPolicyName = "OptionalMcpClient";
 
     /// <summary>Header accepted as an alternative to <c>Authorization: Bearer</c>.</summary>
     public const string ApiKeyHeader = "X-Api-Key";
 
     /// <summary>Claim carrying the id of the key that authenticated the request, for audit logs.</summary>
     public const string KeyIdClaimType = "mcp:key_id";
+    internal const string OwnerClaimType = "mcp:key_owner";
+    internal const string OrganizationClaimType = "mcp:key_organization";
 
     private const string BearerPrefix = "Bearer ";
 
     private readonly IMcpKeyStore _keyStore;
+    private readonly IOptionsMonitor<AdminAuthConfiguration> _adminAuth;
 
     public McpApiKeyHandler(
         IOptionsMonitor<AuthenticationSchemeOptions> options,
         ILoggerFactory loggerFactory,
         UrlEncoder encoder,
-        IMcpKeyStore keyStore)
+        IMcpKeyStore keyStore,
+        IOptionsMonitor<AdminAuthConfiguration> adminAuth)
         : base(options, loggerFactory, encoder)
     {
         _keyStore = keyStore;
+        _adminAuth = adminAuth;
     }
 
     protected override Task<AuthenticateResult> HandleAuthenticateAsync()
@@ -54,7 +61,8 @@ public sealed class McpApiKeyHandler : AuthenticationHandler<AuthenticationSchem
             return Task.FromResult(AuthenticateResult.NoResult());
 
         var key = _keyStore.Validate(presented);
-        if (key is null)
+        if (key is null || (key.Owner is not null &&
+            !AdminEmailAllowList.IsAllowed(key.Owner, _adminAuth.CurrentValue.AllowedEmails)))
         {
             Logger.LogWarning(
                 "Rejected MCP request with an invalid API key. Path={Path} RemoteIp={RemoteIp}",
@@ -65,9 +73,12 @@ public sealed class McpApiKeyHandler : AuthenticationHandler<AuthenticationSchem
         var identity = new ClaimsIdentity(
             [
                 new Claim(ClaimTypes.Name, key.Label),
-                new Claim(KeyIdClaimType, key.Id)
+                new Claim(KeyIdClaimType, key.Id),
+                new Claim(OrganizationClaimType, key.OrganizationId)
             ],
             SchemeName);
+        if (key.Owner is not null)
+            identity.AddClaim(new Claim(OwnerClaimType, key.Owner));
         foreach (var accountId in key.AllowedAccounts ?? [])
             identity.AddClaim(new Claim(McpAccountSelection.ClaimType, accountId));
 

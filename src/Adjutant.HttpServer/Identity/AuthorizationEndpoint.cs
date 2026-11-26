@@ -31,6 +31,7 @@ internal static class AuthorizationEndpoint
     public const string DecisionField = "decision";
     public const string Allow = "allow";
     public const string AllowedAccountsProperty = "allowedAccounts";
+    internal const string AdminTokenSubject = "admin";
 
     /// <summary>Claim (in tokens) naming the provider that vouched for the owner, as in the console cookie.</summary>
     public const string ProviderClaim = "idp";
@@ -109,10 +110,11 @@ internal static class AuthorizationEndpoint
         if (user is null || !CanApprove(user, environment.IsDevelopment() && !FunnelRequest.IsFunnel(http)))
             return Reject(Errors.AccessDenied, "Connecting an app needs a Google or Microsoft sign-in, not the admin token.");
 
+        var owner = AdminSessionPolicy.GetOwner(user);
         string[] allowedAccounts;
         try
         {
-            allowedAccounts = await McpAccountSelection.ResolveAsync(accounts,
+            allowedAccounts = await McpAccountSelection.ResolveAsync(accounts, owner,
                 http.Request.Form[McpAccountSelection.ModeField].ToString(),
                 http.Request.Form[McpAccountSelection.AccountField]);
         }
@@ -121,16 +123,15 @@ internal static class AuthorizationEndpoint
             return Reject(Errors.InvalidRequest, ex.Message);
         }
 
-        var email = user.FindFirstValue(ClaimTypes.Email);
         var provider = user.FindFirstValue(AdminOidc.ProviderClaimType) ?? AdminSessionPolicy.TokenProvider;
-        var subject = email ?? "admin";
+        var subject = owner ?? AdminTokenSubject;
 
         var identity = new ClaimsIdentity(TokenValidationParameters.DefaultAuthenticationType, Claims.Name, Claims.Role);
         identity.SetClaim(Claims.Subject, subject)
             .SetClaim(Claims.Name, user.FindFirstValue(ClaimTypes.Name) ?? subject)
             .SetClaim(ProviderClaim, provider);
-        if (email is not null)
-            identity.SetClaim(Claims.Email, email);
+        if (owner is not null)
+            identity.SetClaim(Claims.Email, owner);
         if (user.FindFirstValue(ClaimTypes.NameIdentifier) is { Length: > 0 } adminSubject)
             identity.SetClaim(AdminSubjectClaim, adminSubject);
         foreach (var accountId in allowedAccounts)

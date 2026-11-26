@@ -96,6 +96,44 @@ public class AccountConfigurationServiceTests
     }
 
     [TestMethod]
+    public async Task UpdatingAnAccountPreservesItsStoredOwnerAndOrganization()
+    {
+        var service = CreateService();
+        await service.AddAccountAsync(TestData.CreateAccount(id: "owned", owner: "owner@example.com", organizationId: "organization"));
+        await service.UpdateAccountAsync(TestData.CreateAccount(id: "owned", displayName: "Updated"));
+
+        var stored = await service.GetAccountFromConfigAsync("owned");
+        Assert.IsNotNull(stored);
+        Assert.AreEqual("owner@example.com", stored.Owner);
+        Assert.AreEqual("organization", stored.OrganizationId);
+        Assert.AreEqual("Updated", stored.DisplayName);
+    }
+
+    [TestMethod]
+    [DataRow("owned")]
+    [DataRow("jane.work")]
+    public async Task OwnedAccountsRejectLeftoverCredentialsAndClearTheirFilesOnRemoval(string accountId)
+    {
+        var service = CreateService();
+        var account = TestData.CreateAccount(id: accountId, owner: "owner@example.com");
+        var cache = ConfigurationPaths.GetMsalCachePath(account.Id);
+        var google = ConfigurationPaths.GetGoogleCredentialsDirectory(account.Id);
+
+        await File.WriteAllTextAsync(cache, "stale");
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => service.AddAccountAsync(account));
+        File.Delete(cache);
+        await service.AddAccountAsync(account);
+
+        await File.WriteAllTextAsync(cache, "current");
+        Directory.CreateDirectory(google);
+        await service.RemoveAccountAsync(account.Id);
+
+        Assert.IsFalse(File.Exists(cache));
+        Assert.IsFalse(Directory.Exists(google));
+        Assert.IsNull(await service.GetAccountFromConfigAsync(account.Id));
+    }
+
+    [TestMethod]
     public async Task GetAccount_ConfigWithNoPermissionsBlock_GrantsEverything()
     {
         // A config written before this feature existed.
@@ -116,6 +154,8 @@ public class AccountConfigurationServiceTests
         var stored = await CreateService().GetAccountFromConfigAsync("legacy");
 
         Assert.IsNotNull(stored);
+        Assert.IsNull(stored.Owner);
+        Assert.AreEqual(AccountInfo.DefaultOrganizationId, stored.OrganizationId);
         foreach (var permission in AccountPermissions.AllPermissions)
             Assert.IsTrue(stored.Permissions.IsGranted(permission), permission.ToString());
     }

@@ -5,10 +5,17 @@ namespace Adjutant.Core.Models;
 /// </summary>
 public class AccountInfo
 {
+    public const string DefaultOrganizationId = "default";
+
     /// <summary>
     /// Unique identifier for this account (e.g., "work-account", "personal-gmail")
     /// </summary>
     public required string Id { get; init; }
+
+    /// <summary>The owner's sign-in email. Omitted for accounts in the legacy shared scope.</summary>
+    public string? Owner { get; init; }
+
+    public string OrganizationId { get; init; } = DefaultOrganizationId;
     
     /// <summary>
     /// Display name for user reference (e.g., "Work Account")

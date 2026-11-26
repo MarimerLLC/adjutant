@@ -2,6 +2,7 @@ using Spectre.Console;
 using Spectre.Console.Cli;
 using Adjutant.Core.Services;
 using Adjutant.Core.Configuration;
+using Adjutant.Core.Models;
 using System.Text.Json;
 using System.ComponentModel;
 
@@ -145,26 +146,14 @@ public class AddJsonAccountCommand : AsyncCommand<AddJsonAccountCommand.Settings
                 if (jsonDoc.RootElement.TryGetProperty("Adjutant", out var mcpSection) &&
                     mcpSection.TryGetProperty("Accounts", out var accountsArray))
                 {
-                    var existingAccounts = new List<(string id, string display, string provider)>();
-
-                    foreach (var acct in accountsArray.EnumerateArray())
-                    {
-                        var id = "";
-                        if (acct.TryGetProperty("id", out var idProp)) id = idProp.GetString() ?? "";
-                        else if (acct.TryGetProperty("Id", out idProp)) id = idProp.GetString() ?? "";
-                        var display = "";
-                        if (acct.TryGetProperty("displayName", out var dn)) display = dn.GetString() ?? "";
-                        else if (acct.TryGetProperty("DisplayName", out dn)) display = dn.GetString() ?? "";
-                        var provider = "";
-                        if (acct.TryGetProperty("provider", out var prov)) provider = prov.GetString() ?? "";
-                        else if (acct.TryGetProperty("Provider", out prov)) provider = prov.GetString() ?? "";
-
-                        // Only show accounts that have Microsoft credentials (outlook.com or m365)
-                        if (provider is "outlook.com" or "microsoft365" or "m365")
-                        {
-                            existingAccounts.Add((id, display, provider));
-                        }
-                    }
+                    var configured = accountsArray.Deserialize<List<Dictionary<string, JsonElement>>>()?
+                        .Select(AccountConfigurationEntry.Read).ToList() ?? [];
+                    var borrower = configured.FirstOrDefault(a => string.Equals(a.Id, accountId, StringComparison.OrdinalIgnoreCase));
+                    var existingAccounts = configured
+                        .Where(a => a.Provider is "outlook.com" or "microsoft365" or "m365")
+                        .Where(a => CredentialDelegation.HasSameOwner(a,
+                            borrower?.Owner, borrower?.OrganizationId ?? AccountInfo.DefaultOrganizationId))
+                        .ToList();
 
                     if (existingAccounts.Count > 0)
                     {
@@ -174,7 +163,7 @@ public class AddJsonAccountCommand : AsyncCommand<AddJsonAccountCommand.Settings
                         if (reuseCredentials)
                         {
                             var choices = existingAccounts
-                                .Select(a => $"{a.id} - {a.display} ({a.provider})")
+                                .Select(a => $"{a.Id} - {a.DisplayName} ({a.Provider})")
                                 .ToList();
 
                             var selectedAccount = AnsiConsole.Prompt(
@@ -362,10 +351,6 @@ public class AddJsonAccountCommand : AsyncCommand<AddJsonAccountCommand.Settings
                     ?? new List<Dictionary<string, object>>();
             }
 
-            // Check if account already exists
-            var existingIndex = accounts.FindIndex(a =>
-                a.TryGetValue("Id", out var id) && id?.ToString() == accountId);
-
             var permissions = PermissionPrompt.Prompt("json", providerConfig);
 
             var newAccount = new Dictionary<string, object>
@@ -380,16 +365,7 @@ public class AddJsonAccountCommand : AsyncCommand<AddJsonAccountCommand.Settings
                 { "permissions", PermissionPrompt.ToConfigNode(permissions) }
             };
 
-            if (existingIndex >= 0)
-            {
-                AnsiConsole.MarkupLine($"[yellow]Account '{accountId}' already exists. Updating...[/]");
-                accounts[existingIndex] = newAccount;
-            }
-            else
-            {
-                AnsiConsole.MarkupLine($"[green]Adding new account '{accountId}'...[/]");
-                accounts.Add(newAccount);
-            }
+            AccountConfigurationEntry.AddOrReplace(accounts, accountId, newAccount);
 
             adjutantSection["Accounts"] = accounts;
             configDict["Adjutant"] = adjutantSection;

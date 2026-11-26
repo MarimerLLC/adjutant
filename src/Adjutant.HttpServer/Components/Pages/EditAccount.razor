@@ -405,7 +405,7 @@ else if (_model is not null)
             else
             {
                 _model = EditAccountFormModel.FromAccountInfo(account, PasswordProtector);
-                await LoadMicrosoftAccountsAsync();
+                await LoadMicrosoftAccountsAsync(account);
             }
         }
         catch (Exception ex)
@@ -418,15 +418,16 @@ else if (_model is not null)
         }
     }
 
-    private async Task LoadMicrosoftAccountsAsync()
+    private async Task LoadMicrosoftAccountsAsync(AccountInfo account)
     {
         try
         {
             var all = await ConfigService.GetAllAccountsFromConfigAsync();
             _microsoftAccounts = all
                 .Where(a => a.Provider is "microsoft365" or "outlook.com")
+                .Where(a => CredentialDelegation.HasSameOwner(a, account.Owner, account.OrganizationId))
                 .ToList();
-            _borrowers = CredentialDelegation.FindBorrowers(all, AccountId!);
+            _borrowers = CredentialDelegation.FindBorrowers(all, account);
         }
         catch
         {

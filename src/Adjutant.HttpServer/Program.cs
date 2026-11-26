@@ -197,7 +197,10 @@ public class Program
         builder.Services.AddAuthorizationBuilder()
             .AddPolicy(McpApiKeyHandler.PolicyName, policy => policy
                 .AddAuthenticationSchemes(McpOAuthSetup.BearerScheme)
-                .RequireAuthenticatedUser());
+                .RequireAuthenticatedUser())
+            .AddPolicy(McpApiKeyHandler.OptionalPolicyName, policy => policy
+                .AddAuthenticationSchemes(McpOAuthSetup.BearerScheme)
+                .RequireAssertion(_ => true));
 
         // Configure MCP server with HTTP/SSE transport and register tools
         var requireMcpCredential = builder.Configuration.GetValue("Adjutant:Mcp:RequireApiKey", true);
@@ -313,11 +316,9 @@ public class Program
         // OpenIddict serves token, revocation and discovery itself.
         app.MapMcpOAuth();
 
-        if (requireMcpCredential)
-        {
-            mcpEndpoints.RequireAuthorization(McpApiKeyHandler.PolicyName);
-            attachmentEndpoints.RequireAuthorization(McpApiKeyHandler.PolicyName);
-        }
+        var mcpPolicy = requireMcpCredential ? McpApiKeyHandler.PolicyName : McpApiKeyHandler.OptionalPolicyName;
+        mcpEndpoints.RequireAuthorization(mcpPolicy);
+        attachmentEndpoints.RequireAuthorization(mcpPolicy);
 
         // Map admin API endpoints
         app.MapAdminEndpoints();

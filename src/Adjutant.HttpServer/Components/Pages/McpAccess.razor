@@ -6,6 +6,7 @@
 @using Adjutant.Core.Models
 @using Adjutant.Core.Security
 @using Adjutant.Core.Services
+@using Adjutant.HttpServer.BlazorAdmin
 @using Adjutant.HttpServer.Identity
 @using Adjutant.HttpServer.Security
 @using Microsoft.Extensions.Options
@@ -15,6 +16,7 @@
 @inject ConnectedApps ConnectedApps
 @inject OAuthAvailability OAuth
 @inject TimeProvider Time
+@inject AuthenticationStateProvider AuthenticationState
 
 @* "/admin/ui/keys" is the page's old address (MCP Keys), kept so bookmarks still work. *@
 
@@ -28,7 +30,7 @@
         <i class="bi bi-exclamation-triangle me-1"></i>
         <strong>Access control is disabled.</strong>
         <code>Adjutant:Mcp:RequireApiKey</code> is <code>false</code>, so the MCP endpoint
-        accepts any caller that can reach it and the keys and apps below are not being checked.
+        accepts anonymous calls to legacy shared accounts.
     </div>
 }
 
@@ -94,7 +96,7 @@
             <legend class="fs-6 fw-semibold">Account access</legend>
             <select class="form-select w-auto" @bind="_accountAccess" aria-label="Account access">
                 <option value="" disabled>Choose account access</option>
-                <option value="@McpAccountSelection.All">All accounts, including accounts added later</option>
+                <option value="@McpAccountSelection.All">All accounts available to you, including accounts added later</option>
                 @if (_accounts.Count > 0)
                 {
                     <option value="@McpAccountSelection.Selected">Selected accounts</option>
@@ -155,7 +157,7 @@
                                 @key.Label
                                 <div class="text-muted small font-monospace">@key.Id</div>
                             </td>
-                            <td class="small">@(key.AllowedAccounts is { Count: > 0 } ids ? string.Join(", ", ids) : "All accounts")</td>
+                            <td class="small">@(key.AllowedAccounts is { Count: > 0 } ids ? string.Join(", ", ids) : key.Owner is null ? "Legacy shared accounts" : "All available accounts")</td>
                             <td class="small">@key.CreatedUtc.LocalDateTime.ToString("g")</td>
                             <td class="small">
                                 @if (key.LastUsedUtc is null)
@@ -328,6 +330,8 @@
     ];
 
     private List<McpApiKey> _keys = [];
+    private string? _owner;
+    private string AppSubject => _owner ?? AuthorizationEndpoint.AdminTokenSubject;
     private List<ConnectedApp>? _apps;
     private string _newLabel = "";
     private int _newLifetimeDays = 90;
@@ -411,18 +415,21 @@
 
     protected override async Task OnInitializedAsync()
     {
+        _owner = AdminSessionPolicy.GetOwner((await AuthenticationState.GetAuthenticationStateAsync()).User);
         ReloadKeys();
-        _accounts = (await AccountRegistry.GetAllAccountsAsync()).OrderBy(a => a.DisplayName).ToList();
+        _accounts = (await McpAccountSelection.ListAsync(AccountRegistry, _owner)).OrderBy(a => a.DisplayName).ToList();
         await ReloadAppsAsync();
     }
 
-    private void ReloadKeys() => _keys = [.. KeyStore.List()];
+    private void ReloadKeys() => _keys = [.. KeyStore.List().Where(key =>
+        key.OrganizationId == AccountInfo.DefaultOrganizationId &&
+        (key.Owner is null || string.Equals(key.Owner, _owner, StringComparison.OrdinalIgnoreCase)))];
 
     private async Task ReloadAppsAsync()
     {
         try
         {
-            _apps = [.. await ConnectedApps.ListAsync()];
+            _apps = [.. await ConnectedApps.ListAsync(AppSubject)];
         }
         catch (Exception ex)
         {
@@ -452,8 +459,8 @@
         try
         {
             TimeSpan? lifetime = _newLifetimeDays > 0 ? TimeSpan.FromDays(_newLifetimeDays) : null;
-            var allowedAccounts = await McpAccountSelection.ResolveAsync(AccountRegistry, _accountAccess, _selectedAccounts);
-            var (_, secret) = KeyStore.Create(_newLabel, lifetime, allowedAccounts);
+            var allowedAccounts = await McpAccountSelection.ResolveAsync(AccountRegistry, _owner, _accountAccess, _selectedAccounts);
+            var (_, secret) = KeyStore.Create(_newLabel, lifetime, allowedAccounts, _owner);
             _newSecret = secret;
             _newLabel = "";
             _accountAccess = "";
@@ -476,7 +483,7 @@
         _error = null;
         try
         {
-            KeyStore.Revoke(key.Id);
+            KeyStore.Revoke(key.Id, _owner);
             ReloadKeys();
         }
         catch (Exception ex)
@@ -495,8 +502,8 @@
         _error = null;
         try
         {
-            if (!await ConnectedApps.DisconnectAsync(app.ApplicationId))
-                _error = $"{app.Name} is no longer registered.";
+            if (!await ConnectedApps.DisconnectAsync(app.ApplicationId, AppSubject))
+                _error = $"{app.Name} is no longer connected.";
             _confirmDisconnect = null;
             await ReloadAppsAsync();
         }

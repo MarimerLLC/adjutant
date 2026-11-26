@@ -70,7 +70,7 @@ public class CredentialDelegationTests
             JsonAccount("local-cal", "local", "work"),
         };
 
-        var borrowers = CredentialDelegation.FindBorrowers(accounts, "work");
+        var borrowers = CredentialDelegation.FindBorrowers(accounts, accounts[0]);
 
         CollectionAssert.AreEqual(new[] { "team-cal" }, borrowers.Select(b => b.Id).ToArray());
     }
@@ -101,5 +101,17 @@ public class CredentialDelegationTests
 
         Assert.IsNotNull(problem);
         StringAssert.Contains(problem, "'work' which was not found");
+    }
+
+    [TestMethod]
+    public void CheckLender_RequiresTheSameOwnerAndOrganization()
+    {
+        var borrower = TestData.CreateAccount(id: "calendar", provider: "json", owner: "owner@example.com");
+        var missing = CredentialDelegation.CheckLender(borrower, "work", null);
+
+        Assert.AreEqual(missing, CredentialDelegation.CheckLender(borrower, "work", TestData.CreateAccount(id: "work", owner: "other@example.com")));
+        Assert.AreEqual(missing, CredentialDelegation.CheckLender(borrower, "work", TestData.CreateAccount(id: "work")));
+        Assert.AreEqual(missing, CredentialDelegation.CheckLender(borrower, "work", TestData.CreateAccount(id: "work", owner: borrower.Owner, organizationId: "other")));
+        Assert.IsNull(CredentialDelegation.CheckLender(borrower, "work", TestData.CreateAccount(id: "work", owner: "OWNER@example.com")));
     }
 }

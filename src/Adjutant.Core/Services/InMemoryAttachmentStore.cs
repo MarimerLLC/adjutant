@@ -13,24 +13,30 @@ namespace Adjutant.Core.Services;
 public sealed class InMemoryAttachmentStore : IAttachmentStore
 {
     private readonly Dictionary<string, StoredAttachment> _entries = new(StringComparer.Ordinal);
+    private readonly Dictionary<(string OrganizationId, string Owner), long> _ownerBytes = new();
     private readonly Lock _gate = new();
     private readonly AttachmentStoreOptions _options;
     private readonly ILogger<InMemoryAttachmentStore> _logger;
     private readonly TimeProvider _time;
     private readonly IMcpCallerContextAccessor? _callerContext;
+    private readonly IAccountRegistry? _accounts;
     private long _totalBytes;
 
     public InMemoryAttachmentStore(
         IOptions<AttachmentStoreOptions> options,
         ILogger<InMemoryAttachmentStore> logger,
         TimeProvider? timeProvider = null,
-        IMcpCallerContextAccessor? callerContext = null)
+        IMcpCallerContextAccessor? callerContext = null,
+        IAccountRegistry? accounts = null)
     {
         _options = options.Value;
         _logger = logger;
         _time = timeProvider ?? TimeProvider.System;
         _callerContext = callerContext;
+        _accounts = accounts;
     }
+
+    private McpCallerContext Caller => _callerContext?.Current ?? McpCallerContext.Unrestricted;
 
     public StoredAttachment? Put(string name, string? contentType, byte[] bytes, string? sourceAccountId = null)
     {
@@ -40,10 +46,13 @@ public sealed class InMemoryAttachmentStore : IAttachmentStore
             return null;
         }
 
+        var caller = Caller;
         var id = NewId();
         var entry = new StoredAttachment
         {
             Id = id,
+            Owner = AdminEmailAllowList.Normalize(caller.UserId),
+            OrganizationId = caller.OrganizationId,
             Name = string.IsNullOrWhiteSpace(name) ? "attachment" : name,
             ContentType = contentType,
             SourceAccountId = sourceAccountId,
@@ -57,6 +66,14 @@ public sealed class InMemoryAttachmentStore : IAttachmentStore
             if (_totalBytes + bytes.Length > _options.MaxTotalBytes)
             {
                 return null;
+            }
+            if (entry.Owner is { } owner && bytes.Length > 0)
+            {
+                var key = (entry.OrganizationId, owner);
+                var ownerBytes = _ownerBytes.GetValueOrDefault(key) + bytes.Length;
+                if (ownerBytes > _options.MaxBytesPerOwner)
+                    return null;
+                _ownerBytes[key] = ownerBytes;
             }
             _entries[id] = entry;
             _totalBytes += bytes.Length;
@@ -77,8 +94,7 @@ public sealed class InMemoryAttachmentStore : IAttachmentStore
             if (!_entries.TryGetValue(attachmentId, out var entry) || !CanAccess(entry))
                 return null;
 
-            _entries.Remove(attachmentId);
-            _totalBytes -= entry.Bytes.Length;
+            Remove(entry);
 
             if (entry.ExpiresAt <= _time.GetUtcNow())
             {
@@ -103,8 +119,7 @@ public sealed class InMemoryAttachmentStore : IAttachmentStore
             if (entry.ExpiresAt <= _time.GetUtcNow())
             {
                 // Lazily clean up the expired entry while we hold the lock.
-                _entries.Remove(attachmentId);
-                _totalBytes -= entry.Bytes.Length;
+                Remove(entry);
                 return null;
             }
 
@@ -121,15 +136,41 @@ public sealed class InMemoryAttachmentStore : IAttachmentStore
         {
             if (!_entries.TryGetValue(attachmentId, out var entry) || !CanAccess(entry))
                 return false;
-            _entries.Remove(attachmentId);
-            _totalBytes -= entry.Bytes.Length;
+            Remove(entry);
             return true;
         }
     }
 
-    private bool CanAccess(StoredAttachment entry) =>
-        entry.SourceAccountId is not { } sourceAccountId ||
-        (_callerContext?.Current ?? McpCallerContext.Unrestricted).AllowsAccount(sourceAccountId);
+    private bool CanAccess(StoredAttachment entry)
+    {
+        var caller = Caller;
+        if (caller.IsUnrestricted)
+            return true;
+        if (!caller.Owns(entry.Owner, entry.OrganizationId))
+            return false;
+
+        return entry.SourceAccountId is not { } sourceAccountId ||
+            (caller.AllowsAccount(sourceAccountId) &&
+             (_accounts is null || _accounts.GetEnabledAccounts().Any(account =>
+                 string.Equals(account.Id, sourceAccountId, StringComparison.OrdinalIgnoreCase) &&
+                 caller.CanAccessAccount(account))));
+    }
+
+    // Caller must hold the cache lock.
+    private void Remove(StoredAttachment entry)
+    {
+        _entries.Remove(entry.Id);
+        _totalBytes -= entry.Bytes.Length;
+        if (entry.Owner is { } owner && entry.Bytes.Length > 0)
+        {
+            var key = (entry.OrganizationId, owner);
+            var bytes = _ownerBytes[key] - entry.Bytes.Length;
+            if (bytes == 0)
+                _ownerBytes.Remove(key);
+            else
+                _ownerBytes[key] = bytes;
+        }
+    }
 
     public void EvictExpired()
     {
@@ -142,22 +183,17 @@ public sealed class InMemoryAttachmentStore : IAttachmentStore
     private void EvictExpiredCore()
     {
         var now = _time.GetUtcNow();
-        List<string>? toRemove = null;
-        foreach (var kv in _entries)
+        List<StoredAttachment>? toRemove = null;
+        foreach (var entry in _entries.Values)
         {
-            if (kv.Value.ExpiresAt <= now)
+            if (entry.ExpiresAt <= now)
             {
-                (toRemove ??= new List<string>()).Add(kv.Key);
+                (toRemove ??= []).Add(entry);
             }
         }
         if (toRemove == null) return;
-        foreach (var id in toRemove)
-        {
-            if (_entries.Remove(id, out var entry))
-            {
-                _totalBytes -= entry.Bytes.Length;
-            }
-        }
+        foreach (var entry in toRemove)
+            Remove(entry);
         _logger.LogDebug("Evicted {Count} expired attachments", toRemove.Count);
     }
 

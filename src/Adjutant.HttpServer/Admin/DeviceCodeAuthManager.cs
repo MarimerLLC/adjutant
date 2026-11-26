@@ -119,7 +119,7 @@ public class DeviceCodeAuthManager
 
         // Check if any JSON calendar accounts reference this account for OneDrive access
         var allAccounts = await _accountRegistry.GetAllAccountsAsync();
-        var needsFilesRead = CredentialDelegation.FindBorrowers(allAccounts, account.Id).Count > 0;
+        var needsFilesRead = CredentialDelegation.FindBorrowers(allAccounts, account).Count > 0;
 
         if (needsFilesRead)
         {

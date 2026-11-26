@@ -60,13 +60,20 @@ else if (_account is not null)
         </div>
     }
 
-    <div class="form-check mb-4">
-        <input class="form-check-input" type="checkbox" id="clearCreds" @bind="_clearCredentials" />
-        <label class="form-check-label" for="clearCreds">
-            Also clear cached credentials (logout)
-        </label>
-        <div class="form-text">Removes stored tokens so re-authentication will be required if the account is re-added.</div>
-    </div>
+    @if (_account.Owner is null)
+    {
+        <div class="form-check mb-4">
+            <input class="form-check-input" type="checkbox" id="clearCreds" @bind="_clearCredentials" />
+            <label class="form-check-label" for="clearCreds">
+                Also clear cached credentials (logout)
+            </label>
+            <div class="form-text">Removes stored tokens so re-authentication will be required if the account is re-added.</div>
+        </div>
+    }
+    else
+    {
+        <p>The server will also remove this account's on-disk credentials. Use a new account ID if another person connects this provider.</p>
+    }
 
     <div class="d-flex gap-2">
         <button class="btn btn-danger" @onclick="HandleDelete" disabled="@_deleting">
@@ -121,7 +128,7 @@ else if (_account is not null)
             else
             {
                 var all = await ConfigService.GetAllAccountsFromConfigAsync();
-                _borrowers = CredentialDelegation.FindBorrowers(all, AccountId);
+                _borrowers = CredentialDelegation.FindBorrowers(all, _account);
             }
         }
         catch (Exception ex)

@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using Adjutant.Core.Models;
 
 namespace Adjutant.Core.Security;
 
@@ -14,6 +15,11 @@ public sealed record McpApiKey
 {
     /// <summary>Stable identifier used to revoke the key. Not a secret.</summary>
     public required string Id { get; init; }
+
+    /// <summary>The owner's sign-in email. Omitted for keys in the legacy shared scope.</summary>
+    public string? Owner { get; init; }
+
+    public string OrganizationId { get; init; } = AccountInfo.DefaultOrganizationId;
 
     /// <summary>Operator-supplied description, e.g. "Claude Desktop - laptop".</summary>
     public required string Label { get; init; }
@@ -39,7 +45,7 @@ public sealed record McpApiKey
     /// </summary>
     public DateTimeOffset? ExpiresUtc { get; init; }
 
-    /// <summary>Account IDs this key may use. Omitted or empty grants access to all accounts.</summary>
+    /// <summary>Account IDs this key may use. Omitted or empty grants access to all accounts available to its owner.</summary>
     public IReadOnlyList<string>? AllowedAccounts { get; init; }
 
     /// <summary>

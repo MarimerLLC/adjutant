@@ -15,6 +15,10 @@ public abstract class AccountFormBase
     [Required(ErrorMessage = "Display name is required.")]
     public string DisplayName { get; set; } = "";
 
+    public string? Owner { get; set; }
+
+    public string OrganizationId { get; set; } = AccountInfo.DefaultOrganizationId;
+
     public string Domains { get; set; } = "";
 
     public bool Enabled { get; set; } = true;
@@ -143,6 +147,8 @@ public class CreateAccountFormModel : AccountFormBase, IExchangeAccountForm
         return new AccountInfo
         {
             Id = Id,
+            Owner = Owner,
+            OrganizationId = OrganizationId,
             DisplayName = DisplayName,
             Provider = Provider,
             Domains = ParseDomains(),
@@ -370,6 +376,8 @@ public class EditAccountFormModel : AccountFormBase, IExchangeAccountForm
         var model = new EditAccountFormModel
         {
             Id = account.Id,
+            Owner = account.Owner,
+            OrganizationId = account.OrganizationId,
             DisplayName = account.DisplayName,
             Provider = account.Provider,
             Domains = string.Join(", ", account.Domains),
@@ -474,6 +482,8 @@ public class EditAccountFormModel : AccountFormBase, IExchangeAccountForm
         return new AccountInfo
         {
             Id = Id,
+            Owner = Owner,
+            OrganizationId = OrganizationId,
             DisplayName = DisplayName,
             Provider = Provider,
             Domains = ParseDomains(),

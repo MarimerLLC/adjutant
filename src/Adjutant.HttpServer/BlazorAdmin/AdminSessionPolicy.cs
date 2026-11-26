@@ -18,6 +18,12 @@ public static class AdminSessionPolicy
     /// <summary>Value of the provider claim for a session established with the admin token.</summary>
     public const string TokenProvider = "token";
 
+    internal static string? GetOwner(ClaimsPrincipal? user) =>
+        user?.Identity?.IsAuthenticated == true &&
+        user.FindFirst(AdminOidc.ProviderClaimType)?.Value != TokenProvider
+            ? AdminEmailAllowList.Normalize(user.FindFirstValue(ClaimTypes.Email))
+            : null;
+
     /// <summary>
     /// Claim carrying <see cref="IAdminTokenStore.Fingerprint"/> of the token a token session was
     /// established with.

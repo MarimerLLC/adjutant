@@ -24,6 +24,7 @@ namespace Adjutant.Tests.Identity;
 [DoNotParallelize]
 public sealed class McpOAuthIntegrationTests
 {
+    private const string OtherOwner = "other@example.com";
     private static readonly Uri MetadataDocumentUrl = new("https://agent.example/oauth/client.json");
 
     private AdjutantApp _app = null!;
@@ -267,6 +268,59 @@ public sealed class McpOAuthIntegrationTests
     }
 
     [TestMethod]
+    public async Task Api_key_ownership_intersects_scope_and_ends_when_the_owner_is_removed()
+    {
+        ConfigureOwnedAccounts();
+        var keys = _app.Services.GetRequiredService<IMcpKeyStore>();
+        var (_, ownerKey) = keys.Create("owner", allowedAccounts: ["own", "other"], owner: AdjutantApp.Owner);
+        var (_, legacyKey) = keys.Create("legacy");
+        await using var owner = await OpenToolClientAsync(ownerKey);
+        await using var legacy = await OpenToolClientAsync(legacyKey);
+
+        await AssertAccountListAsync(owner, "own");
+        await AssertAccountListAsync(legacy, "shared");
+        await AssertAccountDeniedAsync(owner, "get_emails", new() { ["accountId"] = "own-excluded" });
+
+        foreach (var id in new[] { "other", "missing" })
+        {
+            var result = await owner.CallToolAsync("get_emails", new Dictionary<string, object?> { ["accountId"] = id });
+            Assert.IsTrue(result.IsError == true);
+            Assert.AreEqual($"An error occurred invoking 'get_emails': Account '{id}' not found",
+                ((TextContentBlock)result.Content.Single()).Text);
+        }
+
+        _app.UpdateSettings(AdjutantApp.DefaultSettings(allowedEmails: [OtherOwner]));
+        Assert.AreEqual(HttpStatusCode.Unauthorized, (await PostToolsListAsync("Bearer " + ownerKey)).StatusCode);
+        Assert.AreNotEqual(HttpStatusCode.Unauthorized, (await PostToolsListAsync("Bearer " + legacyKey)).StatusCode);
+    }
+
+    [TestMethod]
+    public async Task Optional_authentication_keeps_owned_accounts_private_from_anonymous_callers()
+    {
+        await _app.DisposeAsync();
+        _app = new AdjutantApp(OwnedAccountSettings(requireApiKey: false));
+        var (_, ownerKey) = _app.Services.GetRequiredService<IMcpKeyStore>().Create("owner", owner: AdjutantApp.Owner);
+        await using var owner = await OpenToolClientAsync(ownerKey);
+        await using var anonymous = await OpenToolClientAsync(null);
+
+        await AssertAccountListAsync(owner, "own", "own-excluded", "shared");
+        await AssertAccountListAsync(anonymous, "shared");
+    }
+
+    [TestMethod]
+    public async Task Consent_only_displays_and_accepts_accounts_available_to_the_signed_in_owner()
+    {
+        ConfigureOwnedAccounts();
+        ServeMetadataDocument();
+        var browser = _app.CreateBrowser();
+
+        var denied = await browser.AuthorizeAsync(AuthorizationUrl(), AdjutantApp.Owner, allowedAccounts: ["other"]);
+        Assert.AreEqual("invalid_request", HttpUtility.ParseQueryString(denied.Query)["error"]);
+        StringAssert.Contains(browser.ConsentPage, "Owned mailbox");
+        Assert.IsFalse(browser.ConsentPage.Contains("Other mailbox", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
     public async Task OAuth_account_scope_survives_refresh_and_is_separate_per_authorization()
     {
         ConfigureAccounts();
@@ -322,7 +376,7 @@ public sealed class McpOAuthIntegrationTests
         var redirect = await browser.AuthorizeAsync(url, AdjutantApp.Owner, allowedAccounts: []);
 
         Assert.AreEqual("invalid_request", HttpUtility.ParseQueryString(redirect.Query)["error"]);
-        StringAssert.Contains(browser.ConsentPage, "All accounts, including accounts added later");
+        StringAssert.Contains(browser.ConsentPage, "All accounts available to you, including accounts added later");
         StringAssert.Contains(browser.ConsentPage, "mail-b");
         Assert.IsFalse(browser.ConsentPage.Contains("type=\"hidden\" name=\"ALLOWEDACCOUNTS\"", StringComparison.Ordinal));
     }
@@ -373,12 +427,12 @@ public sealed class McpOAuthIntegrationTests
     [TestMethod]
     public async Task A_signed_in_client_is_listed_as_a_connected_app()
     {
-        Assert.AreEqual(0, (await _app.Services.GetRequiredService<ConnectedApps>().ListAsync()).Count);
+        Assert.AreEqual(0, (await _app.Services.GetRequiredService<ConnectedApps>().ListAsync(AdjutantApp.Owner)).Count);
 
         await ConnectAndGetTokensAsync();
         await ConnectAndGetTokensAsync();
 
-        var app = (await _app.Services.GetRequiredService<ConnectedApps>().ListAsync()).Single();
+        var app = (await _app.Services.GetRequiredService<ConnectedApps>().ListAsync(AdjutantApp.Owner)).Single();
         Assert.AreEqual("Test Agent", app.Name);
         Assert.AreEqual(MetadataDocumentUrl.AbsoluteUri, app.ClientId);
         Assert.AreEqual("agent.example", app.Publisher, "a metadata document's host vouches for the name");
@@ -396,7 +450,7 @@ public sealed class McpOAuthIntegrationTests
         var redirect = await _app.CreateBrowser().AuthorizeAsync(AuthorizationUrl(), AdjutantApp.Owner);
         Assert.IsNotNull(HttpUtility.ParseQueryString(redirect.Query)["code"]);
 
-        Assert.AreEqual(0, (await _app.Services.GetRequiredService<ConnectedApps>().ListAsync()).Count);
+        Assert.AreEqual(0, (await _app.Services.GetRequiredService<ConnectedApps>().ListAsync(AdjutantApp.Owner)).Count);
     }
 
     [TestMethod]
@@ -408,7 +462,7 @@ public sealed class McpOAuthIntegrationTests
         {
         }
 
-        var app = (await _app.Services.GetRequiredService<ConnectedApps>().ListAsync()).Single();
+        var app = (await _app.Services.GetRequiredService<ConnectedApps>().ListAsync(AdjutantApp.Owner)).Single();
         Assert.AreEqual("Legacy Agent", app.Name);
         Assert.IsNull(app.Publisher, "a dynamically registered name is self-asserted");
     }
@@ -420,14 +474,14 @@ public sealed class McpOAuthIntegrationTests
         var connected = _app.Services.GetRequiredService<ConnectedApps>();
         Assert.AreNotEqual(HttpStatusCode.Unauthorized, (await PostToolsListAsync("Bearer " + tokens.AccessToken)).StatusCode);
 
-        Assert.IsTrue(await connected.DisconnectAsync((await connected.ListAsync()).Single().ApplicationId));
+        Assert.IsTrue(await connected.DisconnectAsync((await connected.ListAsync(AdjutantApp.Owner)).Single().ApplicationId, AdjutantApp.Owner));
 
         Assert.AreEqual(HttpStatusCode.Unauthorized, (await PostToolsListAsync("Bearer " + tokens.AccessToken)).StatusCode,
             "the access token stops working at once, not when it expires");
         var refresh = await RefreshAsync(tokens.RefreshToken!);
         Assert.AreEqual(HttpStatusCode.BadRequest, refresh.StatusCode);
         Assert.AreEqual("invalid_grant", (await refresh.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString());
-        Assert.AreEqual(0, (await connected.ListAsync()).Count);
+        Assert.AreEqual(0, (await connected.ListAsync(AdjutantApp.Owner)).Count);
     }
 
     [TestMethod]
@@ -436,14 +490,41 @@ public sealed class McpOAuthIntegrationTests
         await ConnectAndGetTokensAsync();
         var (_, key) = _app.Services.GetRequiredService<IMcpKeyStore>().Create("agent");
         var connected = _app.Services.GetRequiredService<ConnectedApps>();
-        await connected.DisconnectAsync((await connected.ListAsync()).Single().ApplicationId);
+        await connected.DisconnectAsync((await connected.ListAsync(AdjutantApp.Owner)).Single().ApplicationId, AdjutantApp.Owner);
 
         Assert.AreNotEqual(HttpStatusCode.Unauthorized, (await PostToolsListAsync("Bearer " + key)).StatusCode);
 
         var tokens = await ConnectAndGetTokensAsync();
         Assert.AreNotEqual(HttpStatusCode.Unauthorized, (await PostToolsListAsync("Bearer " + tokens.AccessToken)).StatusCode,
             "a disconnected client can connect again through the consent page");
-        Assert.AreEqual(1, (await connected.ListAsync()).Count);
+        Assert.AreEqual(1, (await connected.ListAsync(AdjutantApp.Owner)).Count);
+    }
+
+    [TestMethod]
+    public async Task Disconnecting_a_shared_client_registration_only_revokes_the_callers_grants()
+    {
+        ConfigureOwnedAccounts();
+        var first = await ConnectAndGetTokensAsync();
+        var second = await ConnectAndGetTokensAsync(owner: OtherOwner);
+        await using var firstClient = await OpenToolClientAsync(first.AccessToken);
+        await using var secondClient = await OpenToolClientAsync(second.AccessToken);
+        await AssertAccountListAsync(firstClient, "own", "own-excluded", "shared");
+        await AssertAccountListAsync(secondClient, "other", "shared");
+
+        var connected = _app.Services.GetRequiredService<ConnectedApps>();
+        var app = (await connected.ListAsync(AdjutantApp.Owner)).Single();
+        var othersApp = (await connected.ListAsync(OtherOwner)).Single();
+        Assert.AreEqual(app.ApplicationId, othersApp.ApplicationId);
+        CollectionAssert.AreEqual(new[] { AdjutantApp.Owner }, app.ApprovedBy.ToArray());
+        CollectionAssert.AreEqual(new[] { OtherOwner }, othersApp.ApprovedBy.ToArray());
+        Assert.IsFalse(await connected.DisconnectAsync(app.ApplicationId, "never-connected@example.com"));
+
+        Assert.IsTrue(await connected.DisconnectAsync(app.ApplicationId, AdjutantApp.Owner));
+        Assert.IsEmpty(await connected.ListAsync(AdjutantApp.Owner));
+        Assert.AreEqual(HttpStatusCode.Unauthorized, (await PostToolsListAsync("Bearer " + first.AccessToken)).StatusCode);
+        Assert.AreEqual(HttpStatusCode.BadRequest, (await RefreshAsync(first.RefreshToken!)).StatusCode);
+        await AssertAccountListAsync(secondClient, "other", "shared");
+        Assert.AreEqual(HttpStatusCode.OK, (await RefreshAsync(second.RefreshToken!)).StatusCode);
     }
 
     [TestMethod]
@@ -474,7 +555,7 @@ public sealed class McpOAuthIntegrationTests
 
     [TestMethod]
     public async Task Disconnecting_an_unknown_app_does_nothing() =>
-        Assert.IsFalse(await _app.Services.GetRequiredService<ConnectedApps>().DisconnectAsync("no-such-app"));
+        Assert.IsFalse(await _app.Services.GetRequiredService<ConnectedApps>().DisconnectAsync("no-such-app", AdjutantApp.Owner));
 
     [TestMethod]
     public async Task Oauth_endpoints_are_hidden_when_oauth_is_switched_off()
@@ -505,11 +586,11 @@ public sealed class McpOAuthIntegrationTests
 
     private async Task<string> ConnectAndGetAccessTokenAsync() => (await ConnectAndGetTokensAsync()).AccessToken;
 
-    private async Task<TokenContainer> ConnectAndGetTokensAsync(string[]? allowedAccounts = null)
+    private async Task<TokenContainer> ConnectAndGetTokensAsync(string[]? allowedAccounts = null, string owner = AdjutantApp.Owner)
     {
         ServeMetadataDocument();
         var tokens = new CapturingTokenCache();
-        await using (await _app.ConnectAsync(OAuth(_app.CreateBrowser(), tokens, MetadataDocumentUrl, new Uri("http://127.0.0.1:43125/callback"), allowedAccounts)))
+        await using (await _app.ConnectAsync(OAuth(_app.CreateBrowser(), tokens, MetadataDocumentUrl, new Uri("http://127.0.0.1:43125/callback"), allowedAccounts, owner)))
         {
         }
         return tokens.Tokens!;
@@ -523,10 +604,22 @@ public sealed class McpOAuthIntegrationTests
             new AccountInfo { Id = "mail-c", DisplayName = "Mail C", Provider = "google", Enabled = false }
         ]));
 
-    private async Task<McpClient> OpenToolClientAsync(string credential)
+    private void ConfigureOwnedAccounts() => _app.UpdateSettings(OwnedAccountSettings());
+
+    private static object OwnedAccountSettings(bool requireApiKey = true) =>
+        AdjutantApp.DefaultSettings(allowedEmails: [AdjutantApp.Owner, OtherOwner], requireApiKey: requireApiKey, accounts:
+        [
+            new AccountInfo { Id = "own", DisplayName = "Owned mailbox", Provider = "imap", Owner = AdjutantApp.Owner },
+            new AccountInfo { Id = "own-excluded", DisplayName = "Second mailbox", Provider = "imap", Owner = AdjutantApp.Owner },
+            new AccountInfo { Id = "other", DisplayName = "Other mailbox", Provider = "imap", Owner = OtherOwner },
+            new AccountInfo { Id = "shared", DisplayName = "Legacy mailbox", Provider = "imap" }
+        ]);
+
+    private async Task<McpClient> OpenToolClientAsync(string? credential)
     {
         var http = _app.CreateClient();
-        http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", credential);
+        if (credential is not null)
+            http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", credential);
         var transport = new HttpClientTransport(
             new HttpClientTransportOptions { Endpoint = new Uri(AdjutantApp.Origin + "/") }, http);
         return await McpClient.CreateAsync(transport);
@@ -589,14 +682,16 @@ public sealed class McpOAuthIntegrationTests
         return new Uri($"{AdjutantApp.Origin}{AuthorizationEndpoint.Path}?{query}");
     }
 
-    private static ClientOAuthOptions OAuth(AdjutantApp.Browser browser, ITokenCache tokens, Uri? metadataDocument, Uri redirectUri, string[]? allowedAccounts = null) => new()
+    private static ClientOAuthOptions OAuth(
+        AdjutantApp.Browser browser, ITokenCache tokens, Uri? metadataDocument, Uri redirectUri,
+        string[]? allowedAccounts = null, string owner = AdjutantApp.Owner) => new()
     {
         RedirectUri = redirectUri,
         ClientMetadataDocumentUri = metadataDocument,
         TokenCache = tokens,
         AuthorizationCallbackHandler = async (context, _) =>
         {
-            var redirect = await browser.AuthorizeAsync(context.AuthorizationUri, AdjutantApp.Owner, allowedAccounts: allowedAccounts);
+            var redirect = await browser.AuthorizeAsync(context.AuthorizationUri, owner, allowedAccounts: allowedAccounts);
             var query = HttpUtility.ParseQueryString(redirect.Query);
             return new AuthorizationResult { Code = query["code"], State = query["state"], Iss = query["iss"] };
         },

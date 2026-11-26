@@ -607,8 +607,10 @@ should come from the deployment rather than the data volume:
 export ADJUTANT_MCP_KEY="your-key-here"
 ```
 
-An environment key is always accepted and is never written to `mcp-keys.json`. Rotate it by
-changing the environment variable. Setting it also suppresses first-start key generation.
+An environment key is never written to `mcp-keys.json`. Rotate it by changing the environment
+variable. Setting it suppresses first-start key generation. Set `ADJUTANT_MCP_KEY_OWNER` to an
+allow-listed sign-in email to let the key use that person's accounts. An environment key without
+an owner reaches legacy shared accounts.
 
 **Managing keys**: use **MCP Access** in the admin console (earlier versions called it
 **MCP Keys**; the old `/admin/ui/keys` address still opens it). Create one key per client so any of
@@ -616,10 +618,10 @@ them can be revoked without disturbing the others; the console shows the key onc
 along with a ready-to-paste snippet for Claude Code, VS Code, `mcp-remote`, or curl. Revoking
 takes effect immediately, and revoked keys are kept in the list for the record.
 
-**Account scope**: choose **All accounts, including accounts added later** or **Selected accounts**
+**Account scope**: choose **All accounts available to you, including accounts added later** or **Selected accounts**
 when you create a key. To change a key's scope in the console, create a replacement and revoke
 the old key. In `mcp-keys.json`, the optional `allowedAccounts` array contains account IDs. A missing
-or empty array gives access to all accounts. See [MCP account scoping](security.md#mcp-account-scoping).
+or empty array gives access to all accounts available to the key's owner. See [MCP account scoping](security.md#mcp-account-scoping).
 
 **Key lifetime**: each new key gets a lifetime of 30, 90, 180 or 365 days, or **No expiry**; the
 console defaults to 90 days. An expired key is refused from the moment in its `expiresUtc`, and
@@ -661,7 +663,7 @@ expire. Removing every entry makes the server generate a fresh key on the next s
 
 | Setting | Default | Effect |
 |---|---|---|
-| `Adjutant:Mcp:RequireApiKey` | `true` | When `false`, the MCP and attachment endpoints accept any caller that can reach them. |
+| `Adjutant:Mcp:RequireApiKey` | `true` | When `false`, anonymous MCP and attachment requests can reach legacy shared accounts and attachments. |
 
 ```json
 {

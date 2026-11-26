@@ -11,11 +11,15 @@ internal static class TestData
         bool enabled = true,
         List<string>? domains = null,
         Dictionary<string, string>? providerConfig = null,
-        AccountPermissions? permissions = null)
+        AccountPermissions? permissions = null,
+        string? owner = null,
+        string organizationId = AccountInfo.DefaultOrganizationId)
     {
         return new AccountInfo
         {
             Id = id,
+            Owner = owner,
+            OrganizationId = organizationId,
             DisplayName = displayName,
             Provider = provider,
             Enabled = enabled,

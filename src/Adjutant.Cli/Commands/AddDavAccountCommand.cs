@@ -334,9 +334,6 @@ public class AddDavAccountCommand : AsyncCommand<AddDavAccountCommand.Settings>
                 JsonSerializer.Serialize(accountsObj)) ?? new List<Dictionary<string, object>>();
         }
 
-        var existingIndex = accounts.FindIndex(a =>
-            a.TryGetValue("Id", out var id) && id?.ToString() == accountId);
-
         var newAccount = new Dictionary<string, object>
         {
             ["Id"] = accountId,
@@ -349,16 +346,7 @@ public class AddDavAccountCommand : AsyncCommand<AddDavAccountCommand.Settings>
             ["Permissions"] = PermissionPrompt.ToConfigNode(permissions)
         };
 
-        if (existingIndex >= 0)
-        {
-            AnsiConsole.MarkupLine($"[yellow]Account '{accountId}' already exists. Updating...[/]");
-            accounts[existingIndex] = newAccount;
-        }
-        else
-        {
-            AnsiConsole.MarkupLine($"[green]Adding new account '{accountId}'...[/]");
-            accounts.Add(newAccount);
-        }
+        AccountConfigurationEntry.AddOrReplace(accounts, accountId, newAccount);
 
         adjutantSection["Accounts"] = accounts;
         configDict["Adjutant"] = adjutantSection;

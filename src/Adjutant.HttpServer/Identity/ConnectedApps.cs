@@ -37,7 +37,7 @@ internal sealed class ConnectedApps(IServiceScopeFactory scopes, TimeProvider ti
     /// refresh token, so one that stopped refreshing drops off the list once its refresh token runs
     /// out. Several sign-ins of the same client are one entry.
     /// </summary>
-    public async Task<IReadOnlyList<ConnectedApp>> ListAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<ConnectedApp>> ListAsync(string subject, CancellationToken cancellationToken = default)
     {
         var now = time.GetUtcNow().UtcDateTime;
         await using var scope = scopes.CreateAsyncScope();
@@ -46,7 +46,7 @@ internal sealed class ConnectedApps(IServiceScopeFactory scopes, TimeProvider ti
         // Access and refresh tokens only: an authorization code alone is a sign-in that was never
         // finished, not a connected app.
         var rows = await db.Set<OpenIddictEntityFrameworkCoreAuthorization>()
-            .Where(a => a.Status == Statuses.Valid && a.Application != null &&
+            .Where(a => a.Subject == subject && a.Status == Statuses.Valid && a.Application != null &&
                         a.Tokens.Any(t => (t.Type == TokenTypeIdentifiers.AccessToken || t.Type == TokenTypeIdentifiers.RefreshToken) &&
                                           t.Status == Statuses.Valid && (t.ExpirationDate == null || t.ExpirationDate > now)))
             .Select(a => new
@@ -82,30 +82,33 @@ internal sealed class ConnectedApps(IServiceScopeFactory scopes, TimeProvider ti
     }
 
     /// <summary>
-    /// Revokes every approval the client holds and every token issued to it. Its access token stops
+    /// Revokes the subject's approvals and tokens for this client. Its access token stops
     /// working on the next request (validation checks the token and its approval) and its refresh token is refused.
     /// The client stays registered, so it can connect again through the consent page.
-    /// Returns false when there is no such client.
+    /// Returns false when the subject has no valid approval for the client.
     /// </summary>
-    public async Task<bool> DisconnectAsync(string applicationId, CancellationToken cancellationToken = default)
+    public async Task<bool> DisconnectAsync(string applicationId, string subject, CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(applicationId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(subject);
         await using var scope = scopes.CreateAsyncScope();
-        var applications = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
-        var application = await applications.FindByIdAsync(applicationId, cancellationToken);
-        if (application is null)
-            return false;
+        var db = scope.ServiceProvider.GetRequiredService<OAuthDbContext>();
+        await using var transaction = await db.Database.BeginTransactionAsync(cancellationToken);
 
         // Validation checks both the token's own entry and its approval (McpOAuthSetup), so revoking
         // either is enough on its own; both are revoked so the database says what happened.
-        await scope.ServiceProvider.GetRequiredService<IOpenIddictAuthorizationManager>()
-            .RevokeByApplicationIdAsync(applicationId, cancellationToken);
+        var revoked = await scope.ServiceProvider.GetRequiredService<IOpenIddictAuthorizationManager>()
+            .RevokeAsync(subject, applicationId, Statuses.Valid, type: null, cancellationToken);
+        if (revoked == 0)
+            return false;
+
         await scope.ServiceProvider.GetRequiredService<IOpenIddictTokenManager>()
-            .RevokeByApplicationIdAsync(applicationId, cancellationToken);
+            .RevokeAsync(subject, applicationId, status: null, type: null, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         logger.LogInformation(
-            "Disconnected MCP client {ClientId} ({Name}): its approvals and tokens are revoked",
-            await applications.GetClientIdAsync(application, cancellationToken),
-            await applications.GetDisplayNameAsync(application, cancellationToken));
+            "Disconnected MCP client {ApplicationId} for user {Owner}: its approvals and tokens are revoked",
+            applicationId, subject);
         return true;
     }
 

@@ -77,6 +77,19 @@ public class FileMcpKeyStoreTests
     }
 
     [TestMethod]
+    public void KeyOwnership_PersistsAndLimitsRevocation()
+    {
+        var (key, secret) = CreateStore().Create("owned", owner: " OWNER@example.com ");
+        var store = CreateStore();
+
+        Assert.AreEqual("owner@example.com", store.Validate(secret)?.Owner);
+        Assert.IsFalse(store.Revoke(key.Id));
+        Assert.IsFalse(store.Revoke(key.Id, "other@example.com"));
+        Assert.IsTrue(store.Revoke(key.Id, "owner@example.com"));
+        Assert.IsNull(store.Validate(secret));
+    }
+
+    [TestMethod]
     public void Create_rejects_blank_account_ids()
     {
         var store = CreateStore();

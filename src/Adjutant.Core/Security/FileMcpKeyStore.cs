@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Adjutant.Core.Configuration;
+using Adjutant.Core.Models;
 using Microsoft.Extensions.Logging;
 
 namespace Adjutant.Core.Security;
@@ -20,6 +21,7 @@ public sealed class FileMcpKeyStore : IMcpKeyStore
     /// <summary>Environment variable holding a bootstrap key, for deployments that inject
     /// secrets rather than using the admin UI (k8s Secret, docker-compose env).</summary>
     public const string BootstrapEnvVariable = "ADJUTANT_MCP_KEY";
+    public const string BootstrapOwnerEnvVariable = "ADJUTANT_MCP_KEY_OWNER";
 
     /// <summary>Prefix on every generated secret, so a leaked string is recognizable as an
     /// Adjutant credential in logs and secret scanners.</summary>
@@ -51,6 +53,7 @@ public sealed class FileMcpKeyStore : IMcpKeyStore
     private readonly ILogger<FileMcpKeyStore> _logger;
     private readonly string _filePath;
     private readonly byte[]? _bootstrapHash;
+    private readonly McpApiKey _bootstrapKey;
     private readonly TimeProvider _time;
     private readonly Lock _gate = new();
 
@@ -79,11 +82,13 @@ public sealed class FileMcpKeyStore : IMcpKeyStore
     /// <param name="filePath">Overridable for tests; defaults to the shared data directory.</param>
     /// <param name="bootstrapSecret">Overridable for tests; defaults to the environment variable.</param>
     /// <param name="time">Overridable for tests; defaults to the system clock.</param>
+    /// <param name="bootstrapOwner">Overridable for tests; defaults to the environment variable.</param>
     public FileMcpKeyStore(
         ILogger<FileMcpKeyStore> logger,
         string? filePath = null,
         string? bootstrapSecret = null,
-        TimeProvider? time = null)
+        TimeProvider? time = null,
+        string? bootstrapOwner = null)
     {
         _logger = logger;
         _time = time ?? TimeProvider.System;
@@ -91,6 +96,10 @@ public sealed class FileMcpKeyStore : IMcpKeyStore
 
         var bootstrap = bootstrapSecret ?? LegacyNames.GetEnvironmentVariable("MCP_KEY");
         _bootstrapHash = string.IsNullOrWhiteSpace(bootstrap) ? null : ComputeHash(bootstrap);
+        _bootstrapKey = BootstrapKey with
+        {
+            Owner = AdminEmailAllowList.Normalize(bootstrapOwner ?? Environment.GetEnvironmentVariable(BootstrapOwnerEnvVariable))
+        };
 
         Load();
     }
@@ -118,7 +127,7 @@ public sealed class FileMcpKeyStore : IMcpKeyStore
         }
     }
 
-    public (McpApiKey Key, string Secret) Create(string label, TimeSpan? lifetime = null, IEnumerable<string>? allowedAccounts = null)
+    public (McpApiKey Key, string Secret) Create(string label, TimeSpan? lifetime = null, IEnumerable<string>? allowedAccounts = null, string? owner = null)
     {
         if (string.IsNullOrWhiteSpace(label))
             throw new ArgumentException("A label is required so keys can be told apart when revoking.", nameof(label));
@@ -135,6 +144,7 @@ public sealed class FileMcpKeyStore : IMcpKeyStore
         var key = new McpApiKey
         {
             Id = "k_" + Base64UrlEncode(RandomNumberGenerator.GetBytes(8)),
+            Owner = AdminEmailAllowList.Normalize(owner),
             Label = label.Trim(),
             Hash = Convert.ToBase64String(ComputeHash(secret)),
             CreatedUtc = now,
@@ -155,11 +165,13 @@ public sealed class FileMcpKeyStore : IMcpKeyStore
         return (key, secret);
     }
 
-    public bool Revoke(string id)
+    public bool Revoke(string id, string? owner = null)
     {
         lock (_gate)
         {
-            var index = _keys.FindIndex(k => k.Id == id && k.IsActive);
+            var index = _keys.FindIndex(k => k.Id == id && k.IsActive &&
+                k.OrganizationId == AccountInfo.DefaultOrganizationId &&
+                (k.Owner is null || string.Equals(k.Owner, owner, StringComparison.OrdinalIgnoreCase)));
             if (index < 0)
                 return false;
 
@@ -180,7 +192,7 @@ public sealed class FileMcpKeyStore : IMcpKeyStore
         if (_bootstrapHash is not null &&
             CryptographicOperations.FixedTimeEquals(presentedHash, _bootstrapHash))
         {
-            return BootstrapKey;
+            return _bootstrapKey;
         }
 
         var now = _time.GetUtcNow();
@@ -281,6 +293,8 @@ public sealed class FileMcpKeyStore : IMcpKeyStore
             _keys = document?.Keys ?? [];
             if (_keys.Any(k => k.AllowedAccounts?.Any(string.IsNullOrWhiteSpace) == true))
                 throw new InvalidDataException("Allowed account IDs must not be empty.");
+            if (_keys.Any(k => string.IsNullOrWhiteSpace(k.OrganizationId)))
+                throw new InvalidDataException("Key organization IDs must not be empty.");
             var now = _time.GetUtcNow();
             _logger.LogInformation(
                 "Loaded {Usable} usable, {Expired} expired and {Revoked} revoked MCP API key(s) from {Path}",
